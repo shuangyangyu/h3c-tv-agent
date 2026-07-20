@@ -30,6 +30,7 @@ async def async_setup_entry(
         entities.append(
             H3CTVCooldownRemainingSensor(coordinator, entry, tv_key, tv_info)
         )
+        entities.append(H3CTVOnTodaySensor(coordinator, entry, tv_key, tv_info))
     async_add_entities(entities)
 
 
@@ -152,4 +153,34 @@ class H3CTVCooldownRemainingSensor(H3CTVBaseSensor):
                 self.tv_key, dt_util.now()
             ),
             1,
+        )
+
+
+class H3CTVOnTodaySensor(H3CTVBaseSensor):
+    """Sensor for today's total TV power-on time."""
+
+    def __init__(
+        self,
+        coordinator: H3CTVCoordinator,
+        entry: ConfigEntry,
+        tv_key: str,
+        tv_info: TVConfig,
+    ) -> None:
+        """Initialize the daily TV power-on sensor."""
+        super().__init__(coordinator, entry, tv_key, tv_info)
+        self._attr_unique_id = f"{entry.entry_id}_{tv_key}_tv_on_today"
+        self._attr_translation_key = "tv_on_today"
+        self._attr_icon = "mdi:television"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def available(self) -> bool:
+        """Return whether this TV has a media player binding."""
+        return bool(self.coordinator.tv_entity_id(self.tv_key))
+
+    @property
+    def native_value(self) -> float:
+        """Return today's TV power-on time in minutes."""
+        return self.coordinator.child_policy.get_tv_on_minutes(
+            self.tv_key, dt_util.now()
         )

@@ -53,6 +53,11 @@
         "name": "上网开关"
       }
     },
+    "sensor": {
+      "tv_on_today": {
+        "name": "今日电视开启"
+      }
+    },
     "select": {
       "allowed_window": {
         "name": "允许时段",

@@ -38,6 +38,7 @@ const TEXT = {
     child: "儿童控制",
     session: "本次剩余",
     daily: "今日使用",
+    tvOnToday: "今日电视开启",
     cooldown: "冷却剩余",
     minutes: "分钟",
     disabled: "未启用",
@@ -69,6 +70,7 @@ const TEXT = {
     child: "Child control",
     session: "Session remaining",
     daily: "Used today",
+    tvOnToday: "TV on today",
     cooldown: "Cooldown remaining",
     minutes: "min",
     disabled: "Not enabled",
@@ -423,6 +425,7 @@ export class H3CTVChildCard extends LitElement {
     const dailyLimit = this.numberState("daily_minutes");
     const sessionRemaining = this.numberState("session_remaining");
     const dailyUsed = this.numberState("daily_used");
+    const tvOnToday = this.numberState("tv_on_today");
     const cooldown = this.numberState("cooldown_remaining");
     const reason = this.reasonText(internet?.attributes.disable_reason);
     const title =
@@ -470,6 +473,15 @@ export class H3CTVChildCard extends LitElement {
           <div class="metrics">
             ${this.progress(this.words.session, sessionRemaining, sessionLimit, true)}
             ${this.progress(this.words.daily, dailyUsed, dailyLimit)}
+            <div class="duration">
+              <ha-icon icon="mdi:television"></ha-icon>
+              <span>${this.words.tvOnToday}</span>
+              <strong>
+                ${tvOnToday === undefined
+                  ? this.words.unavailable
+                  : `${this.formatNumber(tvOnToday)} ${this.words.minutes}`}
+              </strong>
+            </div>
             <div class="cooldown">
               <ha-icon icon="mdi:snowflake"></ha-icon>
               <span>${this.words.cooldown}</span>
@@ -636,7 +648,8 @@ export class H3CTVChildCard extends LitElement {
       gap: 14px;
     }
     .metric-head,
-    .cooldown {
+    .cooldown,
+    .duration {
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -644,7 +657,8 @@ export class H3CTVChildCard extends LitElement {
       min-height: 28px;
     }
     .metric-head strong,
-    .cooldown strong {
+    .cooldown strong,
+    .duration strong {
       font-size: 13px;
     }
     .progress {
@@ -660,17 +674,20 @@ export class H3CTVChildCard extends LitElement {
       background: var(--primary-color);
       transition: width 0.25s;
     }
-    .cooldown {
+    .cooldown,
+    .duration {
       justify-content: flex-start;
       min-height: 44px;
       padding: 0 10px;
       border-radius: 10px;
       background: var(--secondary-background-color);
     }
-    .cooldown strong {
+    .cooldown strong,
+    .duration strong {
       margin-left: auto;
     }
     .cooldown ha-icon,
+    .duration ha-icon,
     .reason ha-icon {
       --mdc-icon-size: 20px;
       color: var(--primary-color);

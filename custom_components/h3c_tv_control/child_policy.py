@@ -49,6 +49,10 @@ class TvChildRuntime:
     usage_start: str | None = None
     # Earliest time a new session may start after using a full session.
     cooldown_until: str | None = None
+    # Daily TV power-on accounting, independent of child control.
+    tv_on_minutes: float = 0.0
+    tv_on_date: str = ""
+    tv_on_start: str | None = None
 
 
 @dataclass
@@ -109,6 +113,9 @@ class ChildPolicyManager:
                     # Backward compatibility with version 1 storage.
                     usage_start=runtime.get("usage_start", session_start),
                     cooldown_until=runtime.get("cooldown_until"),
+                    tv_on_minutes=runtime.get("tv_on_minutes", 0.0),
+                    tv_on_date=runtime.get("tv_on_date", ""),
+                    tv_on_start=runtime.get("tv_on_start"),
                 ),
             )
         self._dirty = False
@@ -131,6 +138,9 @@ class ChildPolicyManager:
                     "session_start": state.runtime.session_start,
                     "usage_start": state.runtime.usage_start,
                     "cooldown_until": state.runtime.cooldown_until,
+                    "tv_on_minutes": state.runtime.tv_on_minutes,
+                    "tv_on_date": state.runtime.tv_on_date,
+                    "tv_on_start": state.runtime.tv_on_start,
                 },
             }
             for key, state in self._states.items()
@@ -223,6 +233,63 @@ class ChildPolicyManager:
         runtime.usage_date = now.date().isoformat()
         runtime.cooldown_until = None
         runtime.usage_start = now.isoformat() if runtime.session_start else None
+        self._dirty = True
+
+    def ensure_tv_on_current_date(
+        self, tv_key: str, now: datetime | None = None
+    ) -> None:
+        """Reset TV power-on usage at local midnight."""
+        now = now or _local_now()
+        runtime = self._states[tv_key].runtime
+        today = now.date().isoformat()
+        if runtime.tv_on_date == today:
+            return
+
+        runtime.tv_on_minutes = 0.0
+        runtime.tv_on_date = today
+        if runtime.tv_on_start:
+            midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            runtime.tv_on_start = midnight.isoformat()
+        self._dirty = True
+
+    def update_tv_activity(
+        self,
+        tv_key: str,
+        active: bool | None,
+        now: datetime | None = None,
+    ) -> None:
+        """Record a TV activity transition independently of child control."""
+        now = now or _local_now()
+        self.ensure_tv_on_current_date(tv_key, now)
+        runtime = self._states[tv_key].runtime
+        if active is None:
+            return
+        if active:
+            if runtime.tv_on_start is None:
+                runtime.tv_on_start = now.isoformat()
+                self._dirty = True
+            return
+        if runtime.tv_on_start is None:
+            return
+
+        started = self._parse_datetime(runtime.tv_on_start, now)
+        runtime.tv_on_minutes += max(
+            0.0, (now - started).total_seconds() / 60
+        )
+        runtime.tv_on_start = None
+        self._dirty = True
+
+    def reset_tv_on(
+        self, tv_key: str, now: datetime | None = None
+    ) -> None:
+        """Reset today's TV power-on total."""
+        now = now or _local_now()
+        runtime = self._states[tv_key].runtime
+        runtime.tv_on_minutes = 0.0
+        runtime.tv_on_date = now.date().isoformat()
+        runtime.tv_on_start = (
+            now.isoformat() if runtime.tv_on_start is not None else None
+        )
         self._dirty = True
 
     @staticmethod
@@ -397,6 +464,19 @@ class ChildPolicyManager:
             usage_start_value = runtime.usage_start or runtime.session_start
             usage_start = self._parse_datetime(usage_start_value, now)
             used += max(0.0, (now - usage_start).total_seconds() / 60)
+        return round(used, 1)
+
+    def get_tv_on_minutes(
+        self, tv_key: str, now: datetime | None = None
+    ) -> float:
+        """Return today's total TV power-on time in minutes."""
+        now = now or _local_now()
+        self.ensure_tv_on_current_date(tv_key, now)
+        runtime = self._states[tv_key].runtime
+        used = runtime.tv_on_minutes
+        if runtime.tv_on_start:
+            started = self._parse_datetime(runtime.tv_on_start, now)
+            used += max(0.0, (now - started).total_seconds() / 60)
         return round(used, 1)
 
     def get_daily_remaining(

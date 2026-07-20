@@ -53,6 +53,11 @@
         "name": "Internet"
       }
     },
+    "sensor": {
+      "tv_on_today": {
+        "name": "TV on today"
+      }
+    },
     "select": {
       "allowed_window": {
         "name": "Allowed window",

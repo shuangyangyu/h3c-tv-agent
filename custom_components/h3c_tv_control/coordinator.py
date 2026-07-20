@@ -104,6 +104,20 @@ class H3CTVCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return False
         return None
 
+    def tv_entity_id(self, tv_key: str) -> str | None:
+        """Return the media player entity bound to a TV."""
+        return self._tv_entity_ids[tv_key]
+
+    async def _async_record_tv_activity(self, tv_key: str) -> None:
+        """Persist a media player activity transition immediately."""
+        async with self._operation_lock:
+            now = dt_util.now()
+            self.child_policy.update_tv_activity(
+                tv_key, self._tv_activity(tv_key, now), now
+            )
+            await self._async_save_policy_locked()
+        self.async_update_listeners()
+
     def async_setup_tv_listeners(self) -> Callable[[], None]:
         """Listen for bound TV state changes and request immediate refreshes."""
         entity_to_tv = {
@@ -117,6 +131,9 @@ class H3CTVCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         async def _async_tv_state_changed(
             event: Event[EventStateChangedData],
         ) -> None:
+            tv_key = entity_to_tv.get(event.data["entity_id"])
+            if tv_key:
+                await self._async_record_tv_activity(tv_key)
             await self.async_request_refresh()
 
         return async_track_state_change_event(
@@ -162,6 +179,13 @@ class H3CTVCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             await self.async_load_policy()
 
         async with self._operation_lock:
+            now = dt_util.now()
+            for tv_key in TVS:
+                self.child_policy.update_tv_activity(
+                    tv_key, self._tv_activity(tv_key, now), now
+                )
+            await self._async_save_policy_locked()
+
             try:
                 statuses = await self.hass.async_add_executor_job(
                     self.client.get_statuses
@@ -171,7 +195,6 @@ class H3CTVCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     f"无法连接 H3C 交换机: {err}"
                 ) from err
 
-            now = dt_util.now()
             for tv_key in TVS:
                 enabled = statuses[tv_key]["internet_enabled"]
                 entity_id = self._tv_entity_ids[tv_key]
@@ -334,7 +357,9 @@ class H3CTVCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def async_reset_daily(self, tv_key: str) -> None:
         """Reset today's child-policy counters for one TV."""
         async with self._operation_lock:
-            self.child_policy.reset_daily(tv_key, dt_util.now())
+            now = dt_util.now()
+            self.child_policy.reset_daily(tv_key, now)
+            self.child_policy.reset_tv_on(tv_key, now)
             await self._async_save_policy_locked()
         self.async_update_listeners()
 

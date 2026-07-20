@@ -21,6 +21,7 @@ const SUFFIXES = [
   "daily_used",
   "session_remaining",
   "cooldown_remaining",
+  "tv_on_today",
   "daily_reset",
 ] as const;
 
@@ -63,6 +64,7 @@ function makeStates(
     daily_used: "15",
     session_remaining: "20",
     cooldown_remaining: "0",
+    tv_on_today: "75",
     daily_reset: "2026-07-20T07:00:00+00:00",
   };
 
@@ -271,6 +273,13 @@ describe("h3c-tv-child-card interactions", () => {
     const card = await mountCard(makeHass({ bound: false }).hass);
 
     expect(card.shadowRoot!.textContent).toContain("No media_player bound");
+  });
+
+  it("shows today's total TV power-on time", async () => {
+    const card = await mountCard(makeHass().hass);
+
+    expect(card.shadowRoot!.textContent).toContain("TV on today");
+    expect(card.shadowRoot!.textContent).toContain("75 min");
   });
 
   it("shows an entity loading error when the registry request fails", async () => {

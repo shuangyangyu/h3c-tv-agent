@@ -129,3 +129,39 @@ def test_manual_daily_reset_clears_usage_and_cooldown() -> None:
     assert policy.get_daily_used(TV_KEY, reset_at) == 0.0
     assert policy.get_cooldown_remaining(TV_KEY, reset_at) == 0.0
     assert policy.can_enable(TV_KEY, reset_at)[0] is True
+
+
+def test_tv_on_time_is_independent_of_child_control() -> None:
+    """TV power-on time is recorded even when child control is disabled."""
+    policy = ChildPolicyManager()
+    start = datetime.fromisoformat("2026-07-15T18:00:00+08:00")
+    stop = datetime.fromisoformat("2026-07-15T18:25:00+08:00")
+
+    policy.update_tv_activity(TV_KEY, True, start)
+    policy.update_tv_activity(TV_KEY, False, stop)
+
+    assert policy.get_tv_on_minutes(TV_KEY, stop) == 25.0
+
+
+def test_tv_on_time_resets_at_midnight_while_tv_stays_on() -> None:
+    """A TV left on across midnight only counts time from today's midnight."""
+    policy = ChildPolicyManager()
+    start = datetime.fromisoformat("2026-07-15T23:50:00+08:00")
+    now = datetime.fromisoformat("2026-07-16T00:15:00+08:00")
+
+    policy.update_tv_activity(TV_KEY, True, start)
+
+    assert policy.get_tv_on_minutes(TV_KEY, now) == 15.0
+
+
+def test_manual_daily_reset_restarts_active_tv_counter() -> None:
+    """Manual daily reset clears elapsed TV time without losing active state."""
+    policy = ChildPolicyManager()
+    start = datetime.fromisoformat("2026-07-15T18:00:00+08:00")
+    reset_at = datetime.fromisoformat("2026-07-15T18:20:00+08:00")
+    later = datetime.fromisoformat("2026-07-15T18:25:00+08:00")
+
+    policy.update_tv_activity(TV_KEY, True, start)
+    policy.reset_tv_on(TV_KEY, reset_at)
+
+    assert policy.get_tv_on_minutes(TV_KEY, later) == 5.0

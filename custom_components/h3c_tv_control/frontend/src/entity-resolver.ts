@@ -12,6 +12,7 @@ export const ENTITY_SUFFIXES = [
   "daily_used",
   "session_remaining",
   "cooldown_remaining",
+  "tv_on_today",
   "daily_reset",
 ] as const;
 
