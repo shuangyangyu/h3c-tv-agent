@@ -1,42 +1,66 @@
 # H3C S5550 Home Assistant TV Control
 
-这个项目用于在 Home Assistant 中控制多台 Sony 电视是否允许访问互联网。
+这个项目用于在 Home Assistant 中控制多台 Sony 电视是否允许访问互联网，并提供儿童上网时间管理。
 
-核心思路是：Home Assistant 显示电视上网开关，Python 脚本通过 Telnet 登录 H3C S5550 交换机，修改指定 ACL 规则，从而允许或禁止对应电视上网。
+核心思路是：Home Assistant 通过自定义集成 `h3c_tv_control` 登录 H3C S5550 交换机，修改指定 ACL 规则，从而允许或禁止对应电视上网。
 
 ## 功能
 
-- 在 Home Assistant 中显示 4 台电视的上网开关。
-- 开启开关时，删除对应电视的 deny ACL 规则，允许上网。
-- 关闭开关时，恢复对应电视的 deny ACL 规则，禁止上网。
-- 通过定时轮询交换机 ACL，刷新 Home Assistant 中的真实状态。
+### 电视上网控制
+
+- 在 Home Assistant 中显示 4 台电视的上网开关（原生 Switch 实体，标准滑块 UI）
+- 开启开关时，删除对应电视的 deny ACL 规则，允许上网
+- 关闭开关时，恢复对应电视的 deny ACL 规则，禁止上网
+- 通过 DataUpdateCoordinator 每 60 秒轮询交换机 ACL，校正真实状态
+
+### 儿童管理
+
+- 每台电视可单独启用儿童控制
+- 可绑定 HA 中对应的 `media_player`，按电视真实开关机状态计时
+- 单次使用时长限制（默认 30 分钟）
+- 每日总时长限制（默认 90 分钟）
+- 单次用满后的冷却时间（默认 60 分钟）
+- 允许时段预设：全天、白天 08:00–20:00、晚上 20:00–08:00
+- 单次、每日或时段条件到期时自动断网
+- 冷却结束、允许时段开始或每日 0 点重置后自动恢复上网
+
+## 安装
+
+1. 将 `custom_components/h3c_tv_control/` 复制到 `/config/custom_components/`
+2. 重启 Home Assistant
+3. 设置 → 设备与服务 → 添加集成 → 搜索 **H3C TV Control**
+4. 填写交换机 IP、用户名、密码
+5. 在集成“配置”中，为每台电视选择对应的 `media_player` 实体
+
+详细迁移步骤见 [docs/h3c_integration_migration.md](docs/h3c_integration_migration.md)。
 
 ## 主要文件
 
-- `packages/tv_internet/tv_internet.yaml`：Home Assistant package 配置。
-- `scripts/tv_internet/tv_internet_control.py`：H3C 交换机 ACL 控制脚本。
-- `docs/tv_internet.md`：详细部署、调试和维护说明。
-- `to_hass_webhook.py`：早期 webhook 实验脚本，当前方案不依赖它。
+| 路径 | 说明 |
+|------|------|
+| `custom_components/h3c_tv_control/` | Home Assistant 自定义集成 |
+| `packages/tv_internet/tv_internet.yaml` | 旧 YAML 方案（可被插件替代） |
+| `scripts/tv_internet/tv_internet_control.py` | 命令行调试脚本 |
+| `docs/h3c_integration_requirements.md` | 插件需求文档 |
+| `docs/h3c_integration_migration.md` | YAML 迁移指南 |
+| `docs/lovelace_card.md` | 单电视儿童管理自定义卡片说明 |
+| `docs/dashboard_example.yaml` | 仪表盘配置示例 |
+| `docs/tv_internet.md` | 原始部署与调试说明 |
+
+## 仪表盘
+
+- 推荐使用 [H3C 单电视儿童管理卡片](docs/lovelace_card.md)，在一张卡片中控制一台电视的上网和儿童策略。
+- 如需纯原生方案，可参考 [docs/dashboard_example.yaml](docs/dashboard_example.yaml)。
 
 ## 将来发展
 
-后续可以把 H3C 交换机上的路由策略也接入 Home Assistant，让 HA 不只控制电视上网，还能控制指定设备是否走“科学上网路由器”。
-
-计划方向包括：
-
-- 在 Home Assistant 中为指定设备增加“科学上网”开关。
-- 开启后，通过 H3C 交换机的 ACL、策略路由或静态路由，把该设备的外网流量引到科学上网路由器。
-- 关闭后，恢复为普通家庭网关出口。
-- 在 HA 中显示当前设备使用的出口，例如普通网关或科学上网路由器。
-- 为关键状态增加提醒，例如科学上网路由器不可达、策略路由未生效、默认出口异常等。
-- 将电视上网控制、ACL 状态、设备出口状态统一放到 Home Assistant 仪表盘中，作为家庭网络管理面板。
-
-这类功能会影响设备的实际上网路径，后续实现时应先从只读状态检测开始，确认 H3C 路由策略稳定后，再逐步加入开关控制。
+- 科学上网路由器出口切换
+- 动态路由状态监控
+- 每日开启次数限制
+- 家长密码 / 临时加时
 
 ## 注意
 
-交换机密码不要写入代码或提交到 GitHub。运行控制脚本前，需要通过环境变量提供密码：
-
-```bash
-export H3C_SWITCH_PASSWORD="你的交换机密码"
-```
+- 插件通过 Config Flow 配置交换机密码，不写入代码
+- 旧 YAML 方案使用 `H3C_SWITCH_PASSWORD` 环境变量，迁移后不再需要
+- 旧脚本 `tv_internet_control.py` 可保留作为命令行调试工具
