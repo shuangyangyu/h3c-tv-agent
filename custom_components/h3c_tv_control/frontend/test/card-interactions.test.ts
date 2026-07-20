@@ -48,7 +48,10 @@ function entityDomain(suffix: (typeof SUFFIXES)[number]): string {
   return "sensor";
 }
 
-function makeStates(bound = true): Record<string, HassEntity> {
+function makeStates(
+  bound = true,
+  mediaPlayerState = "off",
+): Record<string, HassEntity> {
   const states: Record<string, HassEntity> = {};
   const values: Record<(typeof SUFFIXES)[number], string> = {
     internet: "off",
@@ -86,11 +89,19 @@ function makeStates(bound = true): Record<string, HassEntity> {
               : {},
     };
   }
+  if (bound) {
+    states["media_player.living_room"] = {
+      entity_id: "media_player.living_room",
+      state: mediaPlayerState,
+      attributes: { friendly_name: "Living room TV" },
+    };
+  }
   return states;
 }
 
 function makeHass(options?: {
   bound?: boolean;
+  mediaPlayerState?: string;
   registryFailure?: boolean;
   serviceFailure?: Error;
 }): {
@@ -103,7 +114,10 @@ function makeHass(options?: {
 
   const hass: HomeAssistant = {
     language: "en",
-    states: makeStates(options?.bound ?? true),
+    states: makeStates(
+      options?.bound ?? true,
+      options?.mediaPlayerState ?? "off",
+    ),
     callWS: async <T>(message: Record<string, unknown>): Promise<T> => {
       if (message.type === "config/entity_registry/list") {
         if (options?.registryFailure) throw new Error("registry unavailable");
@@ -144,9 +158,20 @@ afterEach(() => {
 });
 
 describe("h3c-tv-child-card interactions", () => {
-  it("calls the correct services for internet and child switches", async () => {
+  it("calls the correct services for TV, internet, and child switches", async () => {
     const { hass, callService } = makeHass();
     const card = await mountCard(hass);
+
+    (
+      card.shadowRoot!.querySelector(
+        '.switch-row[aria-label="TV power"]',
+      ) as HTMLButtonElement
+    ).click();
+    await vi.waitFor(() =>
+      expect(callService).toHaveBeenCalledWith("media_player", "turn_on", {
+        entity_id: "media_player.living_room",
+      }),
+    );
 
     (
       card.shadowRoot!.querySelector(
@@ -167,6 +192,23 @@ describe("h3c-tv-child-card interactions", () => {
     await vi.waitFor(() =>
       expect(callService).toHaveBeenCalledWith("switch", "turn_off", {
         entity_id: "switch.living_room_child",
+      }),
+    );
+  });
+
+  it("turns off a TV whose media player is active", async () => {
+    const { hass, callService } = makeHass({
+      mediaPlayerState: "playing",
+    });
+    const card = await mountCard(hass);
+
+    card.shadowRoot!.querySelector<HTMLButtonElement>(
+      '.switch-row[aria-label="TV power"]',
+    )!.click();
+
+    await vi.waitFor(() =>
+      expect(callService).toHaveBeenCalledWith("media_player", "turn_off", {
+        entity_id: "media_player.living_room",
       }),
     );
   });

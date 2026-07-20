@@ -20,7 +20,7 @@
 1. 打开“设置 → 仪表盘”。
 2. 右上角菜单选择“资源”。
 3. 添加资源：
-   - URL：`/h3c_tv_control/lovelace/h3c-tv-child-card.js?v=0.2.0`
+   - URL：`/h3c_tv_control/lovelace/h3c-tv-child-card.js?v=0.3.0`
    - 类型：`JavaScript 模块`
 4. 强制刷新浏览器页面。
 
@@ -44,6 +44,7 @@ device_id: 你的电视设备ID
 ## 卡片功能
 
 - 查看电视活动状态和网络状态
+- 开启或关闭绑定的电视
 - 开关电视上网
 - 启用或关闭儿童控制
 - 查看本次剩余、今日已用和冷却剩余时间

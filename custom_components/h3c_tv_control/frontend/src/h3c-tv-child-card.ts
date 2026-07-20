@@ -17,6 +17,13 @@ import type {
 } from "./types";
 
 const UNAVAILABLE = new Set(["unavailable", "unknown"]);
+const ACTIVE_MEDIA_PLAYER_STATES = new Set([
+  "on",
+  "idle",
+  "playing",
+  "paused",
+  "buffering",
+]);
 
 const TEXT = {
   zh: {
@@ -26,6 +33,7 @@ const TEXT = {
     tvOn: "电视开启",
     tvOff: "电视关闭",
     tvUnbound: "未绑定 media_player",
+    tvPower: "电视电源",
     internet: "上网",
     child: "儿童控制",
     session: "本次剩余",
@@ -56,6 +64,7 @@ const TEXT = {
     tvOn: "TV on",
     tvOff: "TV off",
     tvUnbound: "No media_player bound",
+    tvPower: "TV power",
     internet: "Internet",
     child: "Child control",
     session: "Session remaining",
@@ -231,6 +240,19 @@ export class H3CTVChildCard extends LitElement {
     );
   }
 
+  private toggleMediaPlayer(entityId: unknown): void {
+    if (typeof entityId !== "string") return;
+    const entity = this.hass?.states[entityId];
+    if (!this.usable(entity)) return;
+    const on = ACTIVE_MEDIA_PLAYER_STATES.has(entity!.state);
+    void this.call(
+      "media_player",
+      "media_player",
+      on ? "turn_off" : "turn_on",
+      { entity_id: entityId },
+    );
+  }
+
   private setNumber(suffix: EntitySuffix, event: Event): void {
     const entity = this.entity(suffix);
     const value = Number((event.target as HTMLInputElement).value);
@@ -282,6 +304,27 @@ export class H3CTVChildCard extends LitElement {
         @click=${() => this.toggle(suffix)}
       >
         <span>${label}</span>
+        <span class="toggle ${on ? "on" : ""}" aria-hidden="true"
+          ><span></span
+        ></span>
+      </button>
+    `;
+  }
+
+  private mediaPlayerControl(entityId: unknown) {
+    const entity =
+      typeof entityId === "string" ? this.hass?.states[entityId] : undefined;
+    const available = this.usable(entity);
+    const on = !!entity && ACTIVE_MEDIA_PLAYER_STATES.has(entity.state);
+    return html`
+      <button
+        class="switch-row"
+        aria-label=${this.words.tvPower}
+        aria-pressed=${on}
+        ?disabled=${!available || this.busy.has("media_player")}
+        @click=${() => this.toggleMediaPlayer(entityId)}
+      >
+        <span>${this.words.tvPower}</span>
         <span class="toggle ${on ? "on" : ""}" aria-hidden="true"
           ><span></span
         ></span>
@@ -419,6 +462,7 @@ export class H3CTVChildCard extends LitElement {
           ${!mediaPlayer ? html`<div class="notice">${this.words.tvUnbound}</div>` : nothing}
 
           <div class="switches">
+            ${this.mediaPlayerControl(mediaPlayer)}
             ${this.switchControl("internet", this.words.internet)}
             ${this.switchControl("child", this.words.child)}
           </div>
@@ -533,7 +577,7 @@ export class H3CTVChildCard extends LitElement {
     }
     .switches {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 10px;
       margin-bottom: 20px;
     }
