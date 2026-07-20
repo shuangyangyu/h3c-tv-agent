@@ -147,17 +147,28 @@ export class H3CTVChildCard extends LitElement {
   }
 
   protected updated(changed: PropertyValues): void {
-    if (
-      (changed.has("hass") || changed.has("config")) &&
-      this.hass &&
-      this.config &&
-      this.loadedDeviceId !== this.config.device_id &&
-      !this.loadPromise
-    ) {
-      this.loadPromise = this.loadEntities().finally(() => {
-        this.loadPromise = undefined;
-      });
+    if (changed.has("hass") || changed.has("config")) {
+      this.startEntityLoad();
     }
+  }
+
+  private startEntityLoad(): void {
+    if (
+      !this.hass ||
+      !this.config ||
+      this.loadedDeviceId === this.config.device_id ||
+      this.loadPromise
+    ) {
+      return;
+    }
+
+    const requestedDeviceId = this.config.device_id;
+    this.loadPromise = this.loadEntities().finally(() => {
+      this.loadPromise = undefined;
+      if (this.config?.device_id !== requestedDeviceId) {
+        this.startEntityLoad();
+      }
+    });
   }
 
   disconnectedCallback(): void {

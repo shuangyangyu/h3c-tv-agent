@@ -20,7 +20,7 @@
 1. 打开“设置 → 仪表盘”。
 2. 右上角菜单选择“资源”。
 3. 添加资源：
-   - URL：`/h3c_tv_control/lovelace/h3c-tv-child-card.js?v=0.4.0`
+   - URL：`/h3c_tv_control/lovelace/h3c-tv-child-card.js?v=0.4.1`
    - 类型：`JavaScript 模块`
 4. 强制刷新浏览器页面。
 

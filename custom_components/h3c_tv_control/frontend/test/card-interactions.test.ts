@@ -305,4 +305,84 @@ describe("h3c-tv-child-card interactions", () => {
       );
     });
   });
+
+  it("loads the latest device when selection changes during a registry request", async () => {
+    const secondDeviceId = "bedroom-tv";
+    const secondEntries: EntityRegistryEntry[] = ["internet", "child"].map(
+      (suffix) => ({
+        entity_id: `switch.bedroom_${suffix}`,
+        unique_id: `entry_bedroom_${suffix}`,
+        device_id: secondDeviceId,
+        platform: "h3c_tv_control",
+        disabled_by: null,
+      }),
+    );
+    const allEntries = [...registryEntries, ...secondEntries];
+    const allDevices = [
+      ...devices,
+      {
+        id: secondDeviceId,
+        name: "Bedroom TV",
+        identifiers: [["h3c_tv_control", "entry_bedroom"]] as [
+          string,
+          string,
+        ][],
+      },
+    ];
+    let resolveFirstRequest: (
+      entries: EntityRegistryEntry[],
+    ) => void = () => undefined;
+    let entityRequestCount = 0;
+    const hass: HomeAssistant = {
+      language: "en",
+      states: {
+        ...makeStates(),
+        "switch.bedroom_internet": {
+          entity_id: "switch.bedroom_internet",
+          state: "on",
+          attributes: {},
+        },
+        "switch.bedroom_child": {
+          entity_id: "switch.bedroom_child",
+          state: "off",
+          attributes: {},
+        },
+      },
+      callWS: async <T>(message: Record<string, unknown>): Promise<T> => {
+        if (message.type === "config/entity_registry/list") {
+          entityRequestCount += 1;
+          if (entityRequestCount === 1) {
+            return new Promise<EntityRegistryEntry[]>((resolve) => {
+              resolveFirstRequest = resolve;
+            }) as Promise<T>;
+          }
+          return allEntries as T;
+        }
+        if (message.type === "config/device_registry/list") {
+          return allDevices as T;
+        }
+        throw new Error(`Unexpected WS command: ${String(message.type)}`);
+      },
+      callService: vi.fn().mockResolvedValue(undefined),
+    };
+    const card = new H3CTVChildCard();
+    card.setConfig({
+      type: "custom:h3c-tv-child-card",
+      device_id: DEVICE_ID,
+    });
+    card.hass = hass;
+    document.body.append(card);
+    await vi.waitFor(() => expect(entityRequestCount).toBe(1));
+
+    card.setConfig({
+      type: "custom:h3c-tv-child-card",
+      device_id: secondDeviceId,
+    });
+    resolveFirstRequest(allEntries);
+
+    await vi.waitFor(() => {
+      expect(card.shadowRoot?.textContent).toContain("Bedroom TV");
+    });
+    expect(entityRequestCount).toBe(2);
+  });
 });

@@ -71,7 +71,9 @@ export class H3CTVChildCardEditor extends LitElement {
 
     return html`
       <div class="field">
-        <label for="device">${zh ? "电视设备" : "TV device"}</label>
+        <label for="device">
+          ${zh ? "H3C 电视控制设备" : "H3C TV control device"}
+        </label>
         <select
           id="device"
           .value=${this.config.device_id || ""}
@@ -89,6 +91,11 @@ export class H3CTVChildCardEditor extends LitElement {
               html`<option value=${device.id}>${this.deviceName(device)}</option>`,
           )}
         </select>
+        <div class="hint">
+          ${zh
+            ? "请选择带有上网开关的 H3C 设备；真实电视实体在集成“配置”中绑定。"
+            : "Select the H3C device with the internet switch. Bind the real TV entity in the integration options."}
+        </div>
         ${this.loadError
           ? html`<div class="error">
               ${zh ? "无法加载设备列表" : "Unable to load devices"}
@@ -135,6 +142,12 @@ export class H3CTVChildCardEditor extends LitElement {
     .error {
       margin-top: 6px;
       color: var(--error-color);
+    }
+    .hint {
+      margin-top: 6px;
+      color: var(--secondary-text-color);
+      font-size: 12px;
+      line-height: 1.4;
     }
   `;
 }
