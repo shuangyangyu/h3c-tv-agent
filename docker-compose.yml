@@ -1,0 +1,18 @@
+services:
+  h3c-tv-agent:
+    build: ./agent
+    container_name: h3c-tv-agent
+    restart: unless-stopped
+    ports:
+      # 交换机 info-center loghost 指向此主机 IP:514
+      - "514:514/udp"
+    env_file:
+      - ./agent/.env
+    environment:
+      FEEDBACK_MODE: h3c_syslog
+      SYSLOG_UDP_PORT: "514"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

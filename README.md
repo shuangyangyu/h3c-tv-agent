@@ -39,9 +39,11 @@
 
 | 路径 | 说明 |
 |------|------|
-| `custom_components/h3c_tv_control/` | Home Assistant 自定义集成 |
+| `agent/` | Rewrite：Docker Agent（MQTT + Telnet + syslog） |
+| `custom_components/h3c_tv_control/` | 旧 Home Assistant 自定义集成（并行期） |
 | `packages/tv_internet/tv_internet.yaml` | 旧 YAML 方案（可被插件替代） |
 | `scripts/tv_internet/tv_internet_control.py` | 命令行调试脚本 |
+| `docs/rewrite_development.md` | Rewrite 开发文档 |
 | `docs/h3c_integration_requirements.md` | 插件需求文档 |
 | `docs/h3c_integration_migration.md` | YAML 迁移指南 |
 | `docs/lovelace_card.md` | 单电视儿童管理自定义卡片说明 |
@@ -59,6 +61,22 @@
 - 动态路由状态监控
 - 每日开启次数限制
 - 家长密码 / 临时加时
+
+## Rewrite（Docker Agent + MQTT）
+
+新架构：单容器 Agent（Telnet 控 ACL + 进程内 syslog UDP 反馈 + MQTT）。  
+旧集成 `h3c_tv_control` 可短期并行（旧实体约 60s 轮询，与 MQTT 开关互不同步）。
+
+- 运维 / 部署：[agent/README.md](agent/README.md)
+- 开发说明：[docs/rewrite_development.md](docs/rewrite_development.md)
+
+```bash
+cd hass/h3c-s5550
+cp agent/.env.example agent/.env   # H3C_PASSWORD / MQTT_*
+docker compose up -d --build       # 映射 514/udp；交换机 loghost 指向本机
+```
+
+交换机需：`info-center source SHELL loghost level informational`（并 `save`）。
 
 ## 注意
 

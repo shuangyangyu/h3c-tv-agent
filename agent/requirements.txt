@@ -1,0 +1,4 @@
+paho-mqtt>=2.1.0,<3
+structlog>=24.1.0
+pydantic-settings>=2.2.0
+telnetlib3>=2.0.0
