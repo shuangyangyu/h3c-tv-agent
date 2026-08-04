@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from typing import Mapping
 
@@ -14,13 +15,17 @@ from .models import TVConfig, TVS, TVState
 
 log = get_logger("telnet")
 
+_RE_PERMIT_SRC = re.compile(
+    r"(?i)rule\s+(\d+)\s+permit\s+ip\s+source\s+(\d+\.\d+\.\d+\.\d+)\s+0"
+)
+
 
 class SwitchError(RuntimeError):
     pass
 
 
 class H3CSwitch:
-    """Telnet session helpers for TV internet ACL."""
+    """Telnet session helpers for access ACL + policy-route ACL."""
 
     def __init__(
         self,
@@ -30,7 +35,9 @@ class H3CSwitch:
         *,
         port: int = 23,
         acl_id: int = 3000,
+        route_acl_id: int = 3001,
         tvs: Mapping[str, TVConfig] | None = None,
+        route_tvs: Mapping[str, TVConfig] | None = None,
         timeout: float = 10.0,
     ) -> None:
         if not password:
@@ -40,7 +47,9 @@ class H3CSwitch:
         self.username = username
         self.password = password
         self.acl_id = acl_id
+        self.route_acl_id = route_acl_id
         self.tvs = dict(tvs or TVS)
+        self.route_tvs = dict(route_tvs or {})
         self.timeout = timeout
 
     def get_statuses(self) -> dict[str, TVState]:
@@ -63,6 +72,33 @@ class H3CSwitch:
             log.error(
                 "acl poll failed",
                 action="poll",
+                result="fail",
+                error=str(exc),
+                duration_ms=int((time.perf_counter() - started) * 1000),
+            )
+            raise
+
+    def get_route_statuses(self) -> dict[str, TVState]:
+        """ON = ACL 3001 含该 IP 的 permit（走 PBR）。"""
+        started = time.perf_counter()
+        try:
+            acl = self._run(["screen-length disable", f"display acl {self.route_acl_id}"])
+            statuses: dict[str, TVState] = {}
+            for key, tv in self.route_tvs.items():
+                needle = f"permit ip source {tv.ip} 0"
+                statuses[key] = "ON" if needle in acl else "OFF"
+            log.info(
+                "route acl polled",
+                action="poll_route",
+                result="ok",
+                duration_ms=int((time.perf_counter() - started) * 1000),
+                states=statuses,
+            )
+            return statuses
+        except Exception as exc:
+            log.error(
+                "route acl poll failed",
+                action="poll_route",
                 result="fail",
                 error=str(exc),
                 duration_ms=int((time.perf_counter() - started) * 1000),
@@ -98,7 +134,6 @@ class H3CSwitch:
                 commands.append("save force")
             output = self._run(commands)
             self._ensure_ok(output)
-            # 命令成功即回写目标状态；周期 poll 再校正，避免二次 Telnet 拖慢反馈
             state: TVState = want
             log.info(
                 "acl updated",
@@ -117,6 +152,109 @@ class H3CSwitch:
                 action=action,
                 result="fail",
                 deny_rule=tv.deny_rule,
+                error=str(exc),
+                duration_ms=int((time.perf_counter() - started) * 1000),
+            )
+            raise
+
+    def normalize_route_rules(self) -> None:
+        """若 ACL 3001 中源 IP 已 permit 但规则号不是配置值，重写到标准号。"""
+        if not self.route_tvs:
+            return
+        acl = self._run(["screen-length disable", f"display acl {self.route_acl_id}"])
+        for key, tv in self.route_tvs.items():
+            if not tv.route_rule:
+                continue
+            matches = {
+                int(m.group(1))
+                for m in _RE_PERMIT_SRC.finditer(acl)
+                if m.group(2) == tv.ip
+            }
+            if not matches:
+                continue
+            if matches == {tv.route_rule}:
+                continue
+            log.info(
+                "normalizing route rule",
+                tv=key,
+                ip=tv.ip,
+                found=sorted(matches),
+                target=tv.route_rule,
+            )
+            self.set_policy_route(key, "ON")
+
+    def set_policy_route(
+        self, key: str, want: TVState, *, save: bool = False
+    ) -> tuple[TVState, set[int]]:
+        """ON = 写入 ACL 3001 permit；OFF = 删除该源 IP 的 permit。
+
+        返回 (状态, 与通断 deny 同号的被 undo 规则号)。同号时 syslog 可能误报通断，调用方应校正。
+        """
+        tv = self.route_tvs.get(key)
+        if tv is None:
+            raise SwitchError(f"unknown route device: {key}")
+        if not tv.route_rule:
+            raise SwitchError(f"route_rule not assigned for {key}")
+
+        action = "route_on" if want == "ON" else "route_off"
+        started = time.perf_counter()
+        try:
+            # 先读现有规则：按 IP 清掉旧号（如手工配置的 10/15），再写标准号
+            acl = self._run(["screen-length disable", f"display acl {self.route_acl_id}"])
+            undo_ids = {
+                int(m.group(1))
+                for m in _RE_PERMIT_SRC.finditer(acl)
+                if m.group(2) == tv.ip
+            }
+
+            undone_access_collision = undo_ids & {
+                tv.deny_rule for tv in self.tvs.values() if tv.deny_rule
+            }
+
+            commands = [
+                "system-view",
+                f"acl advanced {self.route_acl_id}",
+            ]
+            for rid in sorted(undo_ids):
+                commands.append(f"undo rule {rid}")
+            if want == "ON":
+                commands.append(f"rule {tv.route_rule} permit ip source {tv.ip} 0")
+            commands.extend(["quit", "quit"])
+            if save:
+                commands.append("save force")
+
+            # 无旧规则且要 OFF：无需改 ACL
+            if want == "OFF" and not undo_ids:
+                log.info(
+                    "route already off",
+                    tv=key,
+                    action=action,
+                    result="ok",
+                    state="OFF",
+                    route_rule=tv.route_rule,
+                    duration_ms=int((time.perf_counter() - started) * 1000),
+                )
+                return "OFF", undone_access_collision
+
+            output = self._run(commands)
+            self._ensure_ok(output)
+            log.info(
+                "route acl updated",
+                tv=key,
+                action=action,
+                result="ok",
+                state=want,
+                route_rule=tv.route_rule,
+                duration_ms=int((time.perf_counter() - started) * 1000),
+            )
+            return want, undone_access_collision
+        except Exception as exc:
+            log.error(
+                "route acl update failed",
+                tv=key,
+                action=action,
+                result="fail",
+                route_rule=tv.route_rule,
                 error=str(exc),
                 duration_ms=int((time.perf_counter() - started) * 1000),
             )
@@ -162,7 +300,6 @@ class H3CSwitch:
         )
         if any(m in output for m in markers):
             raise SwitchError(f"switch rejected command:\n{output}")
-        # H3C error lines often start with " % "
         for line in output.splitlines():
             if line.strip().startswith("%"):
                 raise SwitchError(f"switch error line: {line}")

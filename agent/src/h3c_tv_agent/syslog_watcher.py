@@ -1,4 +1,4 @@
-"""Receive / parse H3C syslog → TV switch state (UDP in-process; optional file tail)."""
+"""Receive / parse H3C syslog → access / policy-route MQTT state."""
 
 from __future__ import annotations
 
@@ -7,54 +7,95 @@ import socket
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from .logging_setup import get_logger
-from .models import TVS, TVState
+from .models import TVState, access_devices, policy_route_devices
 
 log = get_logger("syslog")
 
 # 必须带 Command/Commandline is，避免 LOGIN_FAILED 把命令当用户名误匹配
-# Command is undo rule 15
-# Commandline is rule 15 deny ip source 192.168.1.24 0
 _RE_UNDO = re.compile(r"(?i)command(?:line)?\s+is\s+undo\s+rule\s+(\d+)")
 _RE_DENY = re.compile(
     r"(?i)command(?:line)?\s+is\s+rule\s+(\d+)\s+deny\s+ip\s+source\s+(\d+\.\d+\.\d+\.\d+)"
 )
+_RE_PERMIT = re.compile(
+    r"(?i)command(?:line)?\s+is\s+rule\s+(\d+)\s+permit\s+ip\s+source\s+(\d+\.\d+\.\d+\.\d+)"
+)
 
-PublishFn = Callable[[str, TVState, dict | None], None]
-
-
-def _rule_index() -> dict[int, str]:
-    return {tv.deny_rule: key for key, tv in TVS.items()}
-
-
-def _ip_index() -> dict[str, str]:
-    return {tv.ip: key for key, tv in TVS.items()}
+ControlKind = Literal["access", "route"]
 
 
-def parse_h3c_syslog_line(line: str) -> tuple[str, TVState] | None:
-    """Return (tv_key, state) if line describes TV ACL allow/deny."""
+@dataclass(frozen=True)
+class SyslogMatch:
+    key: str
+    state: TVState
+    kind: ControlKind
+
+
+PublishFn = Callable[[str, TVState, dict | None, ControlKind], None]
+
+
+def _access_deny_index() -> dict[int, str]:
+    return {tv.deny_rule: key for key, tv in access_devices().items() if tv.deny_rule}
+
+
+def _access_ip_index() -> dict[str, str]:
+    return {tv.ip: key for key, tv in access_devices().items()}
+
+
+def _route_rule_index() -> dict[int, str]:
+    return {tv.route_rule: key for key, tv in policy_route_devices().items() if tv.route_rule}
+
+
+def _route_ip_index() -> dict[str, str]:
+    return {tv.ip: key for key, tv in policy_route_devices().items()}
+
+
+def parse_h3c_syslog_line(line: str) -> SyslogMatch | None:
+    """Parse SHELL_CMD for access deny/undo or route permit/undo."""
+    permit = _RE_PERMIT.search(line)
+    if permit:
+        rule = int(permit.group(1))
+        ip = permit.group(2)
+        by_rule = _route_rule_index().get(rule)
+        by_ip = _route_ip_index().get(ip)
+        key = by_rule or by_ip
+        if key and (by_ip is None or by_rule is None or by_rule == by_ip):
+            return SyslogMatch(key, "ON", "route")
+        if by_ip:
+            return SyslogMatch(by_ip, "ON", "route")
+        if by_rule:
+            return SyslogMatch(by_rule, "ON", "route")
+        return None
+
     undo = _RE_UNDO.search(line)
     if undo:
         rule = int(undo.group(1))
-        tv = _rule_index().get(rule)
-        if tv:
-            return tv, "ON"
+        # 规则号空间：access deny 15/25… vs route 100/110…（配置保证不重叠）
+        access_key = _access_deny_index().get(rule)
+        if access_key:
+            return SyslogMatch(access_key, "ON", "access")
+        route_key = _route_rule_index().get(rule)
+        if route_key:
+            return SyslogMatch(route_key, "OFF", "route")
+        return None
 
     deny = _RE_DENY.search(line)
     if deny:
         rule = int(deny.group(1))
         ip = deny.group(2)
-        by_rule = _rule_index().get(rule)
-        by_ip = _ip_index().get(ip)
-        tv = by_rule or by_ip
-        if tv and (by_ip is None or by_rule is None or by_rule == by_ip):
-            return tv, "OFF"
+        by_rule = _access_deny_index().get(rule)
+        by_ip = _access_ip_index().get(ip)
+        key = by_rule or by_ip
+        if key and (by_ip is None or by_rule is None or by_rule == by_ip):
+            return SyslogMatch(key, "OFF", "access")
         if by_ip:
-            return by_ip, "OFF"
+            return SyslogMatch(by_ip, "OFF", "access")
         if by_rule:
-            return by_rule, "OFF"
+            return SyslogMatch(by_rule, "OFF", "access")
     return None
 
 
@@ -63,29 +104,43 @@ def emit_syslog_match(line: str, on_state: PublishFn) -> bool:
     parsed = parse_h3c_syslog_line(line)
     if not parsed:
         return False
-    tv, state = parsed
-    tv_cfg = TVS[tv]
-    log.info(
-        "syslog matched",
-        tv=tv,
-        state=state,
-        action="allow" if state == "ON" else "deny",
-        result="ok",
-        deny_rule=tv_cfg.deny_rule,
-        feedback_source="h3c_syslog",
-        line=line.strip()[:200],
-    )
-    on_state(
-        tv,
-        state,
-        {
+    if parsed.kind == "access":
+        tv_cfg = access_devices()[parsed.key]
+        attrs = {
             "name": tv_cfg.name,
             "ip": tv_cfg.ip,
             "deny_rule": tv_cfg.deny_rule,
+            "control": "access",
             "feedback_source": "h3c_syslog",
-            "action": "allow" if state == "ON" else "deny",
-        },
+            "action": "allow" if parsed.state == "ON" else "deny",
+        }
+        action = "allow" if parsed.state == "ON" else "deny"
+        extra = {"deny_rule": tv_cfg.deny_rule}
+    else:
+        tv_cfg = policy_route_devices()[parsed.key]
+        attrs = {
+            "name": tv_cfg.name,
+            "ip": tv_cfg.ip,
+            "route_rule": tv_cfg.route_rule,
+            "control": "route",
+            "feedback_source": "h3c_syslog",
+            "action": "route_on" if parsed.state == "ON" else "route_off",
+        }
+        action = "route_on" if parsed.state == "ON" else "route_off"
+        extra = {"route_rule": tv_cfg.route_rule}
+
+    log.info(
+        "syslog matched",
+        tv=parsed.key,
+        state=parsed.state,
+        action=action,
+        result="ok",
+        control=parsed.kind,
+        feedback_source="h3c_syslog",
+        line=line.strip()[:200],
+        **extra,
     )
+    on_state(parsed.key, parsed.state, attrs, parsed.kind)
     return True
 
 

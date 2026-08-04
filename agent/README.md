@@ -1,127 +1,70 @@
 # h3c-tv-agent
 
-独立 Docker 服务：经 **Telnet** 改 H3C S5550 ACL，经 **MQTT** 对接 Home Assistant；用交换机 **syslog（UDP 514）** 做 Switch 状态反馈。  
-面向将来打成 **HA Addon**（单容器）。
+Docker 服务：Telnet 改 H3C ACL（通断 + 策略路由），MQTT 对接 HA；交换机 syslog UDP 做状态反馈。
 
-开发背景见 [docs/rewrite_development.md](../docs/rewrite_development.md)。
+## 两个配置文件
+
+| 文件 | 内容 |
+|------|------|
+| **`.env`** | 连接/密钥、通断/策略路由 ACL 参数、slog |
+| **`devices.yaml`** | 设备身份 + **access / policy_route** 引用 key |
+
+### `devices.yaml` 结构
+
+```yaml
+devices:          # 所有设备身份
+  - key: master_bedroom
+    name: 主卧电视
+    ip: 192.168.1.24
+    mac: cc98-8b23-abaa
+  - key: phone_test
+    name: 测试手机
+    ip: 192.168.1.36
+    mac: e49c-67d1-f4a4
+
+access:           # 网络通断 → ACL 3000 + MQTT h3c/tv
+  - master_bedroom
+
+policy_route:     # 策略路由 → ACL 3001 + MQTT h3c/route
+  - phone_test
+```
+
+也可用中文段名：`网络断开` / `策略路由`。  
+通断 deny 按 access 顺序 15/25/…；策略路由 permit 按 policy_route 顺序 **100/110/…**（与通断错开，避免 syslog `undo rule N` 歧义）。
 
 ## 数据流
 
 ```text
-HA MQTT Switch ──set──► Agent ──Telnet──► H3C ACL 3000
-                              ▲
-HA MQTT Switch ◄──state───────┘
-                              │
-                    H3C SHELL_CMD syslog UDP:514
+通断：HA MQTT h3c/tv/{key}/set → Telnet ACL 3000 → SHELL syslog → h3c/tv/{key}/state
+策略：HA MQTT h3c/route/{key}/set → Telnet ACL 3001 → SHELL syslog → h3c/route/{key}/state
 ```
 
-- **下发**：`h3c/tv/{tv}/set` → Telnet `undo rule` / `rule N deny`
-- **反馈**：交换机 syslog → 进程内 UDP 解析 → `h3c/tv/{tv}/state`（`attr.feedback_source=h3c_syslog`）
-- 启动时 Telnet 查一次 ACL 做初始对齐；稳态靠 syslog，默认不轮询（`POLL_INTERVAL_SEC=0`）
+- 策略 ON = ACL 3001 有该源 IP 的 `permit`（PBR 命中 → mihomo）
+- 策略 OFF = 删除该 permit（回普通路由）
 
-## 目录
-
-```text
-agent/
-  Dockerfile
-  requirements.txt
-  .env.example
-  src/h3c_tv_agent/
-    __main__.py          # run / status
-    config.py
-    service.py           # 队列 + worker + syslog
-    mqtt_app.py          # Discovery + set/state
-    telnet_switch.py     # telnetlib3.telnetlib
-    syslog_watcher.py    # UDP 514 + 行解析
-    models.py            # 四台电视表
-    logging_setup.py     # structlog JSON
-  tests/
-```
-
-## 部署（241 示例）
+## 部署
 
 ```bash
-cd /path/to/h3c-s5550
-cp agent/.env.example agent/.env   # 填 H3C_PASSWORD / MQTT_*
+cp agent/.env.example agent/.env
+cp agent/devices.yaml.example agent/devices.yaml
 docker compose up -d --build
-
-docker logs -f h3c-tv-agent
-# 应看到：syslog UDP listener started / mqtt connected / acl polled
 ```
 
-Compose 映射 **`514/udp`**。交换机：
+交换机：`info-center loghost …` + `SHELL … informational`。PBR 策略（`policy-based-route mihomo`）需已挂好；Agent 只改 ACL 3001 成员。
 
-```text
-info-center loghost 192.168.1.241
-info-center source SHELL loghost level informational
-save force
-```
+若现网 3001 仍用 rule 10/15，首次 MQTT 开/关会迁到 100/110，并校正可能的通断误报。
 
-> `SHELL` 若仍是 `warning`，`SHELL_CMD` 不会上送，MQTT 状态不会跟 ACL 变化。
+## Addon options ↔ `.env`
 
-本机调试：
+| option / env | 说明 |
+|--------------|------|
+| `H3C_*` / `MQTT_*` | 连接 |
+| `ACCESS_*_RULE_*` | 通断规则递加 |
+| `ROUTE_ACL_ID` / `ROUTE_RULE_*` | 策略路由 ACL / 规则号 |
+| `MQTT_PREFIX` / `MQTT_ROUTE_PREFIX` | 默认 `h3c/tv` / `h3c/route` |
+| `DEVICES_CONFIG_PATH` | 设备 YAML |
+| `SYSLOG_UDP_PORT` / `FEEDBACK_MODE` | 反馈 |
 
-```bash
-cd agent
-cp .env.example .env
-PYTHONPATH=src python -m h3c_tv_agent status   # 查 ACL
-PYTHONPATH=src python -m h3c_tv_agent run      # 需本机可绑 514 或改 SYSLOG_UDP_PORT
-```
+## 与旧插件
 
-## 环境变量
-
-| 变量 | 默认 | 说明 |
-|------|------|------|
-| `H3C_HOST` / `H3C_PORT` | `192.168.1.254` / `23` | 交换机 |
-| `H3C_USER` / `H3C_PASSWORD` | — | Telnet 账号（勿提交） |
-| `H3C_ACL_ID` | `3000` | ACL |
-| `MQTT_HOST` / `MQTT_PORT` | — / `1883` | 现网多为 HA `192.168.1.249` |
-| `MQTT_USER` / `MQTT_PASSWORD` | — | Mosquitto |
-| `MQTT_PREFIX` | `h3c/tv` | Topic 前缀 |
-| `MQTT_CLIENT_ID` | `h3c-tv-agent` | |
-| `FEEDBACK_MODE` | `h3c_syslog` | `h3c_syslog` \| `structured_log`（调试） |
-| `SYSLOG_UDP_PORT` | `514` | `0`=不监听 |
-| `H3C_SYSLOG_PATH` | 空 | 可选文件 tail |
-| `POLL_INTERVAL_SEC` | `0` | `>0` 时周期查 ACL |
-| `LOG_LEVEL` | `INFO` | |
-
-## MQTT
-
-| Topic | 方向 | Payload |
-|-------|------|---------|
-| `{prefix}/{tv}/set` | HA→Agent | `ON` / `OFF` |
-| `{prefix}/{tv}/state` | Agent→HA | `ON` / `OFF` |
-| `{prefix}/{tv}/attr` | Agent→HA | JSON（含 `feedback_source`） |
-| `{prefix}/status` | Agent→HA | `online` / `offline`（LWT） |
-
-`tv`：`master_bedroom`(15) / `living_room`(25) / `elder_room`(35) / `study_room`(45)。
-
-启动时发 MQTT Discovery，HA 出现设备 **H3C TV Agent**。
-
-手工测：
-
-```bash
-mosquitto_pub -h 192.168.1.249 -t h3c/tv/master_bedroom/set -m OFF -u … -P …
-mosquitto_sub -h 192.168.1.249 -t 'h3c/tv/master_bedroom/#' -v -u … -P …
-```
-
-## 与旧插件并存
-
-| | 新 Agent | 旧 `h3c_tv_control` |
-|--|----------|---------------------|
-| 控制 | MQTT → Telnet | HA 内 Telnet |
-| 状态 | syslog 近实时 | Coordinator **约 60s** 轮询 |
-| 实体 | MQTT Discovery | 集成实体 |
-
-两边**互不订阅**。用新开关改 ACL 后，老开关要等下次 poll 才变——属预期，不是 ACL 没改。稳定后禁用旧集成。
-
-## 验收清单（已在现网验证过的路径）
-
-1. MQTT `set OFF/ON` → `display acl 3000` 出现/消失对应 `rule N deny`
-2. Agent 日志 `acl updated` + `syslog matched`
-3. MQTT `state` / `attr.feedback_source=h3c_syslog` 同步
-4. 交换机上直接 `undo rule` / `rule … deny` → 同样走 syslog → MQTT
-
-## 解析注意
-
-只匹配带 `Command is` / `Commandline is` 的 `SHELL_CMD` 行，避免 `LOGIN_FAILED` 把命令当用户名误触发。
+旧 `h3c_tv_control` 约 60s 轮询，与 MQTT 开关互不同步。稳定后禁用旧集成。

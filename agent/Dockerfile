@@ -10,5 +10,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY src ./src
+COPY devices.yaml.example /app/devices.yaml
 
 CMD ["python", "-m", "h3c_tv_agent", "run"]

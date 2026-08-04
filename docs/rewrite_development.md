@@ -68,6 +68,7 @@ paho-mqtt>=2.1.0,<3
 structlog>=24.1.0
 pydantic-settings>=2.2.0
 telnetlib3>=2.0.0
+PyYAML>=6.0.1
 ```
 
 **不选（本期）**：`asyncio`/`aiomqtt` 全家桶、SSH、独立 syslog-ng、Celery。
@@ -168,16 +169,23 @@ def worker_loop() -> None:
 
 ---
 
-## 7. 环境变量
+## 7. 配置（两个文件）
 
-见 `agent/.env.example`。现网要点：
+| 文件 | 用途 |
+|------|------|
+| `agent/.env` | 连接/密钥、ACCESS 规则递加、LOG_*、ROUTE_ACL_ID 占位、挂口白名单 |
+| `agent/devices.yaml` | 设备身份 + `access`（通断）/ `policy_route`（策略路由）引用 key |
+
+
+完整说明与 Addon 对照：[agent/README.md](../agent/README.md)。
 
 ```text
-H3C_HOST=192.168.1.254
-MQTT_HOST=192.168.1.249
-FEEDBACK_MODE=h3c_syslog
-SYSLOG_UDP_PORT=514
-POLL_INTERVAL_SEC=0
+H3C_ACL_ID=3000
+ACCESS_DENY_RULE_BASE=15
+ACCESS_DENY_RULE_STEP=10
+ROUTE_ACL_ID=3001
+LOG_FORMAT=json
+DEVICES_CONFIG_PATH=/app/devices.yaml
 ```
 
 ---
@@ -186,10 +194,10 @@ POLL_INTERVAL_SEC=0
 
 ```text
 hass/h3c-s5550/
-  agent/                 # 服务 + README
-  docker-compose.yml     # 单服务，ports 514/udp
+  agent/                 # .env.example + devices.yaml(.example)
+  docker-compose.yml     # 514/udp + 挂载 devices.yaml
   docs/rewrite_development.md
-  custom_components/     # 旧集成，并行期对照，逐步废弃
+  custom_components/
 ```
 
 ```yaml
@@ -200,8 +208,9 @@ services:
       - "514:514/udp"
     env_file: ./agent/.env
     environment:
-      FEEDBACK_MODE: h3c_syslog
-      SYSLOG_UDP_PORT: "514"
+      DEVICES_CONFIG_PATH: /app/devices.yaml
+    volumes:
+      - ./agent/devices.yaml:/app/devices.yaml:ro
 ```
 
 ---

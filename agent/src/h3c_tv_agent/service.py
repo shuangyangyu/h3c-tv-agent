@@ -5,16 +5,19 @@ from __future__ import annotations
 import queue
 import threading
 import time
+from typing import Literal
 
 from .config import Settings
 from .log_feedback import clear_log_feedback, make_mqtt_feedback_publisher, register_log_feedback
 from .logging_setup import get_logger, setup_logging
-from .models import Command, TVS, TVState
+from .models import ACCESS_KEYS, POLICY_ROUTE_KEYS, Command, TVState, access_devices, policy_route_devices
 from .mqtt_app import MqttBridge
 from .syslog_watcher import H3CSyslogTailer, H3CSyslogUdpServer
 from .telnet_switch import H3CSwitch, SwitchError
 
 log = get_logger("service")
+
+ControlKind = Literal["access", "route"]
 
 
 class AgentService:
@@ -26,6 +29,9 @@ class AgentService:
             settings.h3c_password,
             port=settings.h3c_port,
             acl_id=settings.h3c_acl_id,
+            route_acl_id=settings.route_acl_id,
+            tvs=access_devices(),
+            route_tvs=policy_route_devices(),
         )
         self.commands: queue.Queue[Command | None] = queue.Queue()
         self.switch_lock = threading.Lock()
@@ -36,6 +42,7 @@ class AgentService:
             username=settings.mqtt_user,
             password=settings.mqtt_password,
             prefix=settings.mqtt_prefix,
+            route_prefix=settings.mqtt_route_prefix,
             client_id=settings.mqtt_client_id,
             on_set=self.enqueue_set,
         )
@@ -68,12 +75,21 @@ class AgentService:
                 target=self._poller_loop, name="h3c-poller", daemon=True
             )
 
-    def _on_syslog_state(self, tv: str, state: TVState, attrs: dict | None) -> None:
+    def _on_syslog_state(
+        self,
+        key: str,
+        state: TVState,
+        attrs: dict | None,
+        kind: ControlKind = "access",
+    ) -> None:
         self.mqtt.publish_status("online")
-        self.mqtt.publish_state(tv, state, attrs=attrs)
+        if kind == "route":
+            self.mqtt.publish_route_state(key, state, attrs=attrs)
+        else:
+            self.mqtt.publish_state(key, state, attrs=attrs)
 
-    def enqueue_set(self, tv: str, want: TVState) -> None:
-        self.commands.put(Command(tv=tv, want=want, source="mqtt"))
+    def enqueue_set(self, key: str, want: TVState, kind: ControlKind = "access") -> None:
+        self.commands.put(Command(tv=key, want=want, source="mqtt", kind=kind))
 
     def start(self) -> None:
         self.mqtt.connect()
@@ -84,16 +100,17 @@ class AgentService:
             self._syslog_udp.start()
         if self._syslog_tail is not None:
             self._syslog_tail.start()
-        # 启动时查一次 ACL，直接发 MQTT（初始对齐；之后靠 syslog）
         self.commands.put(Command(tv="*", want="ON", source="bootstrap"))
         log.info(
             "agent started",
             h3c=self.settings.h3c_host,
             mqtt=f"{self.settings.mqtt_host}:{self.settings.mqtt_port}",
-            tvs=list(TVS),
+            tvs=list(ACCESS_KEYS),
+            policy_route=list(POLICY_ROUTE_KEYS),
             feedback_mode=self.settings.feedback_mode,
             syslog_udp_port=self.settings.syslog_udp_port,
             syslog_path=self.settings.h3c_syslog_path or None,
+            route_acl=self.settings.route_acl_id,
         )
 
     def stop(self) -> None:
@@ -140,45 +157,82 @@ class AgentService:
     def _do_bootstrap_status(self) -> None:
         with self.switch_lock:
             try:
+                # 把手工/旧号（如 10/15）迁到 100/110，后续 OFF 的 undo 才能走 syslog→route
+                self.switch.normalize_route_rules()
                 states = self.switch.get_statuses()
+                route_states = self.switch.get_route_statuses()
             except SwitchError as exc:
                 self.mqtt.publish_status("offline")
                 log.error("bootstrap status failed", action="poll", result="fail", error=str(exc))
                 return
         self.mqtt.publish_status("online")
         self.mqtt.publish_all_states(states)
+        self.mqtt.publish_all_route_states(route_states)
 
     def _do_set(self, cmd: Command) -> None:
         with self.switch_lock:
             try:
-                # 只下发；状态反馈等 H3C syslog（或 structured_log 模式）
-                self.switch.set_internet(cmd.tv, cmd.want)
+                if cmd.kind == "route":
+                    _state, collisions = self.switch.set_policy_route(cmd.tv, cmd.want)
+                    # Telnet 成功即回写（旧 rule 号 undo 时 syslog 对不上 route）；syslog 再覆盖
+                    tv = policy_route_devices().get(cmd.tv)
+                    self.mqtt.publish_route_state(
+                        cmd.tv,
+                        cmd.want,
+                        attrs={
+                            "name": tv.name if tv else cmd.tv,
+                            "ip": tv.ip if tv else "",
+                            "route_rule": tv.route_rule if tv else None,
+                            "control": "route",
+                            "feedback_source": "telnet_ack",
+                            "action": "route_on" if cmd.want == "ON" else "route_off",
+                        },
+                    )
+                    if collisions:
+                        try:
+                            self.mqtt.publish_all_states(self.switch.get_statuses())
+                        except Exception:
+                            pass
+                else:
+                    self.switch.set_internet(cmd.tv, cmd.want)
             except SwitchError as exc:
                 log.error(
                     "set failed",
                     tv=cmd.tv,
-                    action="allow" if cmd.want == "ON" else "deny",
+                    kind=cmd.kind,
+                    action=cmd.want,
                     result="fail",
                     error=str(exc),
                 )
                 try:
-                    states = self.switch.get_statuses()
-                    self.mqtt.publish_all_states(states)
+                    if cmd.kind == "route":
+                        self.mqtt.publish_all_route_states(self.switch.get_route_statuses())
+                    else:
+                        self.mqtt.publish_all_states(self.switch.get_statuses())
                 except Exception:
                     pass
 
 
 def run_status_once(settings: Settings) -> int:
     setup_logging(settings.log_level)
+    tvs = access_devices()
+    routes = policy_route_devices()
     sw = H3CSwitch(
         settings.h3c_host,
         settings.h3c_user,
         settings.h3c_password,
         port=settings.h3c_port,
         acl_id=settings.h3c_acl_id,
+        route_acl_id=settings.route_acl_id,
+        tvs=tvs,
+        route_tvs=routes,
     )
     states = sw.get_statuses()
     for key, state in states.items():
-        tv = TVS[key]
-        print(f"{key}: {tv.name} {tv.ip} -> {state}")
+        tv = tvs[key]
+        print(f"access {key}: {tv.name} {tv.ip} -> {state}")
+    route_states = sw.get_route_statuses()
+    for key, state in route_states.items():
+        tv = routes[key]
+        print(f"route  {key}: {tv.name} {tv.ip} rule={tv.route_rule} -> {state}")
     return 0

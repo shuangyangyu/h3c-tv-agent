@@ -34,7 +34,7 @@ def test_log_feedback_acl_event():
             "master_bedroom",
             "OFF",
             {
-                "name": "主卧电视上网",
+                "name": "主卧电视",
                 "ip": "192.168.1.24",
                 "deny_rule": 15,
                 "feedback_source": "log:acl",

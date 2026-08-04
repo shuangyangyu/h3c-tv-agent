@@ -4,13 +4,15 @@ services:
     container_name: h3c-tv-agent
     restart: unless-stopped
     ports:
-      # 交换机 info-center loghost 指向此主机 IP:514
       - "514:514/udp"
     env_file:
       - ./agent/.env
     environment:
       FEEDBACK_MODE: h3c_syslog
       SYSLOG_UDP_PORT: "514"
+      DEVICES_CONFIG_PATH: /app/devices.yaml
+    volumes:
+      - ./agent/devices.yaml:/app/devices.yaml:ro
     logging:
       driver: json-file
       options:

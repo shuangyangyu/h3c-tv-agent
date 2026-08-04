@@ -6,6 +6,7 @@ import argparse
 import sys
 
 from .config import Settings
+from .inventory import RuleAllocation, apply_device_inventory
 from .logging_setup import setup_logging
 from .service import AgentService, run_status_once
 
@@ -21,8 +22,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     settings = Settings()
-    setup_logging(settings.log_level)
-
+    setup_logging(settings.log_level, settings.log_format)
+    apply_device_inventory(
+        settings.devices_path(),
+        rules=RuleAllocation(
+            permit_base=settings.access_permit_rule_base,
+            permit_step=settings.access_permit_rule_step,
+            deny_base=settings.access_deny_rule_base,
+            deny_step=settings.access_deny_rule_step,
+            route_base=settings.route_rule_base,
+            route_step=settings.route_rule_step,
+        ),
+    )
     if not settings.h3c_password:
         print("H3C_PASSWORD is required", file=sys.stderr)
         return 2

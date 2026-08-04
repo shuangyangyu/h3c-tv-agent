@@ -6,7 +6,7 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from .models import TVS, TVState
+from .models import ACCESS_KEYS, TVState, access_devices
 
 _std = logging.getLogger("h3c_tv_agent.log_feedback")
 
@@ -58,7 +58,7 @@ def make_mqtt_feedback_publisher(publish_state, publish_status) -> FeedbackHook:
         states = event.get("states")
         if result == "ok" and isinstance(states, dict):
             for tv, state in states.items():
-                if tv not in TVS or state not in {"ON", "OFF"}:
+                if tv not in ACCESS_KEYS or state not in {"ON", "OFF"}:
                     continue
                 _publish_one(publish_state, tv, state, event, source="log:states")
             return
@@ -67,7 +67,7 @@ def make_mqtt_feedback_publisher(publish_state, publish_status) -> FeedbackHook:
         state = event.get("state")
         if (
             result == "ok"
-            and tv in TVS
+            and tv in ACCESS_KEYS
             and state in {"ON", "OFF"}
             and action in {"allow", "deny"}
         ):
@@ -79,7 +79,7 @@ def make_mqtt_feedback_publisher(publish_state, publish_status) -> FeedbackHook:
 def _publish_one(
     publish_state, tv: str, state: TVState, event: dict[str, Any], *, source: str
 ) -> None:
-    tv_cfg = TVS[tv]
+    tv_cfg = access_devices()[tv]
     publish_state(
         tv,
         state,  # type: ignore[arg-type]
