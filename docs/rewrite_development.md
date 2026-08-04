@@ -1,10 +1,10 @@
-# H3C TV Control · Rewrite 开发文档
+# h3c-tv-agent 开发文档
 
-> 分支：`rewrite`  
-> 相对 v1（HA 自定义集成 `h3c_tv_control`）：把**交换机控制**抽成独立 Python 服务，**Docker 单容器**部署，经 **MQTT** 与 HA 通讯；Telnet 改 ACL；**进程内 UDP syslog** 做 Switch 状态反馈（便于将来 HA Addon）。
+> 独立仓库（由原 `h3c_s5550_hass` 的 rewrite 分出）：**Docker 单容器** Telnet 改 ACL + MQTT + 进程内 UDP syslog。  
+> HA 插件本体见 https://github.com/shuangyangyu/h3c_s5550_hass
 
 运维速查：[agent/README.md](../agent/README.md)  
-交换机 PBR/ACL 逻辑：[`switch_pbr.md`](./switch_pbr.md) → [`network/h3c-pbr-mihomo.md`](../../../network/h3c-pbr-mihomo.md)
+交换机 PBR/ACL：[`switch_pbr.md`](./switch_pbr.md) · [`h3c-pbr-mihomo.md`](./h3c-pbr-mihomo.md)
 
 ---
 
@@ -194,11 +194,10 @@ DEVICES_CONFIG_PATH=/app/devices.yaml
 ## 8. Docker
 
 ```text
-hass/h3c-s5550/
+h3c-tv-agent/
   agent/                 # .env.example + devices.yaml(.example)
   docker-compose.yml     # 514/udp + 挂载 devices.yaml
-  docs/rewrite_development.md
-  custom_components/
+  docs/
 ```
 
 ```yaml

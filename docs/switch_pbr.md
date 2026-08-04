@@ -3,9 +3,9 @@
 更新：2026-08-04
 
 **完整交换机配置逻辑、CLI、报文路径、故障速查：**  
-→ [`../../../network/h3c-pbr-mihomo.md`](../../../network/h3c-pbr-mihomo.md)
+→ [`h3c-pbr-mihomo.md`](./h3c-pbr-mihomo.md)
 
-场景与双 VPN：[`../../../network/pbr-vpn-exceptions.md`](../../../network/pbr-vpn-exceptions.md)
+场景与双 VPN：[`pbr-vpn-exceptions.md`](./pbr-vpn-exceptions.md)
 
 ---
 
