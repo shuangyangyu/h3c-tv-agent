@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import time
 from typing import Mapping
 
@@ -12,12 +11,18 @@ import telnetlib3.telnetlib as telnetlib
 
 from .logging_setup import get_logger
 from .models import TVConfig, TVS, TVState
+from .route_acl import (
+    DEFAULT_ROUTE_BYPASS_CIDRS,
+    build_bypass_permit_commands,
+    build_route_permit_command,
+    expected_bypass_rule_ids,
+    find_source_rule_ids,
+    has_route_permit,
+    parse_bypass_cidrs,
+    pbr_deny_node_configured,
+)
 
 log = get_logger("telnet")
-
-_RE_PERMIT_SRC = re.compile(
-    r"(?i)rule\s+(\d+)\s+permit\s+ip\s+source\s+(\d+\.\d+\.\d+\.\d+)\s+0"
-)
 
 
 class SwitchError(RuntimeError):
@@ -36,8 +41,12 @@ class H3CSwitch:
         port: int = 23,
         acl_id: int = 3000,
         route_acl_id: int = 3001,
+        route_bypass_acl_id: int = 3002,
+        pbr_name: str = "mihomo",
+        pbr_deny_node: int = 5,
         tvs: Mapping[str, TVConfig] | None = None,
         route_tvs: Mapping[str, TVConfig] | None = None,
+        route_bypass_cidrs: str | list[str] | None = None,
         timeout: float = 10.0,
     ) -> None:
         if not password:
@@ -48,9 +57,21 @@ class H3CSwitch:
         self.password = password
         self.acl_id = acl_id
         self.route_acl_id = route_acl_id
+        self.route_bypass_acl_id = route_bypass_acl_id
+        self.pbr_name = pbr_name
+        self.pbr_deny_node = pbr_deny_node
         self.tvs = dict(tvs or TVS)
         self.route_tvs = dict(route_tvs or {})
+        if isinstance(route_bypass_cidrs, list):
+            self.route_bypass_cidrs = (
+                list(route_bypass_cidrs)
+                if route_bypass_cidrs
+                else list(DEFAULT_ROUTE_BYPASS_CIDRS)
+            )
+        else:
+            self.route_bypass_cidrs = parse_bypass_cidrs(route_bypass_cidrs)
         self.timeout = timeout
+        self._pbr_deny_ensured = False
 
     def get_statuses(self) -> dict[str, TVState]:
         started = time.perf_counter()
@@ -79,20 +100,23 @@ class H3CSwitch:
             raise
 
     def get_route_statuses(self) -> dict[str, TVState]:
-        """ON = ACL 3001 含该 IP 的 permit（走 PBR）。"""
+        """ON = ACL 3001 含该 IP 的源 permit（公网走 PBR）。"""
         started = time.perf_counter()
         try:
-            acl = self._run(["screen-length disable", f"display acl {self.route_acl_id}"])
+            acl = self._run(
+                ["screen-length disable", f"display acl {self.route_acl_id}"]
+            )
             statuses: dict[str, TVState] = {}
             for key, tv in self.route_tvs.items():
-                needle = f"permit ip source {tv.ip} 0"
-                statuses[key] = "ON" if needle in acl else "OFF"
+                statuses[key] = "ON" if has_route_permit(acl, tv.ip) else "OFF"
             log.info(
                 "route acl polled",
                 action="poll_route",
                 result="ok",
                 duration_ms=int((time.perf_counter() - started) * 1000),
                 states=statuses,
+                bypass_acl=self.route_bypass_acl_id,
+                bypass=self.route_bypass_cidrs,
             )
             return statuses
         except Exception as exc:
@@ -157,36 +181,91 @@ class H3CSwitch:
             )
             raise
 
+    def ensure_pbr_deny_node(self) -> None:
+        """确保 PBR deny node + if-match 旁路 ACL（幂等）。"""
+        if self._pbr_deny_ensured:
+            return
+        # 不带策略名更稳；带名在部分版本输出不完整会导致误判重复配置
+        pbr = self._run(["screen-length disable", "display ip policy-based-route"])
+        if pbr_deny_node_configured(
+            pbr, node=self.pbr_deny_node, acl_id=self.route_bypass_acl_id
+        ):
+            self._pbr_deny_ensured = True
+            log.info(
+                "pbr deny node ok",
+                pbr=self.pbr_name,
+                node=self.pbr_deny_node,
+                bypass_acl=self.route_bypass_acl_id,
+            )
+            return
+
+        commands = [
+            "system-view",
+            f"acl advanced {self.route_bypass_acl_id}",
+            "description PBR-bypass-private-dest",
+            "quit",
+            f"policy-based-route {self.pbr_name} deny node {self.pbr_deny_node}",
+            f"if-match acl {self.route_bypass_acl_id}",
+            "quit",
+            "quit",
+        ]
+        output = self._run(commands)
+        self._ensure_ok(output)
+        self._pbr_deny_ensured = True
+        log.info(
+            "pbr deny node configured",
+            pbr=self.pbr_name,
+            node=self.pbr_deny_node,
+            bypass_acl=self.route_bypass_acl_id,
+        )
+
     def normalize_route_rules(self) -> None:
-        """若 ACL 3001 中源 IP 已 permit 但规则号不是配置值，重写到标准号。"""
+        """确保 deny node；已 ON 设备校正 3001/3002 规则。"""
         if not self.route_tvs:
             return
-        acl = self._run(["screen-length disable", f"display acl {self.route_acl_id}"])
+        self.ensure_pbr_deny_node()
+        route_acl = self._run(
+            ["screen-length disable", f"display acl {self.route_acl_id}"]
+        )
+        bypass_acl = self._run(
+            ["screen-length disable", f"display acl {self.route_bypass_acl_id}"]
+        )
         for key, tv in self.route_tvs.items():
             if not tv.route_rule:
                 continue
-            matches = {
-                int(m.group(1))
-                for m in _RE_PERMIT_SRC.finditer(acl)
-                if m.group(2) == tv.ip
-            }
-            if not matches:
+            if not has_route_permit(route_acl, tv.ip):
                 continue
-            if matches == {tv.route_rule}:
+            route_ids = find_source_rule_ids(route_acl, tv.ip)
+            bypass_ids = find_source_rule_ids(bypass_acl, tv.ip)
+            expect_bypass = expected_bypass_rule_ids(
+                tv.route_rule, self.route_bypass_cidrs
+            )
+            permit_line = build_route_permit_command(tv.ip, tv.route_rule)
+            bypass_lines = build_bypass_permit_commands(
+                tv.ip, tv.route_rule, self.route_bypass_cidrs
+            )
+            ok = (
+                route_ids == {tv.route_rule}
+                and permit_line in route_acl
+                and bypass_ids == expect_bypass
+                and all(line in bypass_acl for line in bypass_lines)
+            )
+            if ok:
                 continue
             log.info(
                 "normalizing route rule",
                 tv=key,
                 ip=tv.ip,
-                found=sorted(matches),
-                target=tv.route_rule,
+                route_found=sorted(route_ids),
+                bypass_found=sorted(bypass_ids),
+                expect_bypass=sorted(expect_bypass),
             )
             self.set_policy_route(key, "ON")
 
     def set_policy_route(
         self, key: str, want: TVState, *, save: bool = False
     ) -> tuple[TVState, set[int]]:
-        """ON = 写入 ACL 3001 permit；OFF = 删除该源 IP 的 permit。
+        """ON = 3001 源 permit + 3002 私网 permit；OFF = 两边按源 IP 清空。
 
         返回 (状态, 与通断 deny 同号的被 undo 规则号)。同号时 syslog 可能误报通断，调用方应校正。
         """
@@ -199,32 +278,24 @@ class H3CSwitch:
         action = "route_on" if want == "ON" else "route_off"
         started = time.perf_counter()
         try:
-            # 先读现有规则：按 IP 清掉旧号（如手工配置的 10/15），再写标准号
-            acl = self._run(["screen-length disable", f"display acl {self.route_acl_id}"])
-            undo_ids = {
-                int(m.group(1))
-                for m in _RE_PERMIT_SRC.finditer(acl)
-                if m.group(2) == tv.ip
-            }
-
-            undone_access_collision = undo_ids & {
-                tv.deny_rule for tv in self.tvs.values() if tv.deny_rule
-            }
-
-            commands = [
-                "system-view",
-                f"acl advanced {self.route_acl_id}",
-            ]
-            for rid in sorted(undo_ids):
-                commands.append(f"undo rule {rid}")
             if want == "ON":
-                commands.append(f"rule {tv.route_rule} permit ip source {tv.ip} 0")
-            commands.extend(["quit", "quit"])
-            if save:
-                commands.append("save force")
+                self.ensure_pbr_deny_node()
 
-            # 无旧规则且要 OFF：无需改 ACL
-            if want == "OFF" and not undo_ids:
+            route_text = self._run(
+                ["screen-length disable", f"display acl {self.route_acl_id}"]
+            )
+            bypass_text = self._run(
+                ["screen-length disable", f"display acl {self.route_bypass_acl_id}"]
+            )
+
+            undo_route = find_source_rule_ids(route_text, tv.ip)
+            undo_bypass = find_source_rule_ids(bypass_text, tv.ip)
+
+            undone_access_collision = (undo_route | undo_bypass) & {
+                t.deny_rule for t in self.tvs.values() if t.deny_rule
+            }
+
+            if want == "OFF" and not undo_route and not undo_bypass:
                 log.info(
                     "route already off",
                     tv=key,
@@ -236,6 +307,26 @@ class H3CSwitch:
                 )
                 return "OFF", undone_access_collision
 
+            commands = ["system-view", f"acl advanced {self.route_acl_id}"]
+            for rid in sorted(undo_route):
+                commands.append(f"undo rule {rid}")
+            if want == "ON":
+                commands.append(build_route_permit_command(tv.ip, tv.route_rule))
+            commands.append("quit")
+
+            commands.append(f"acl advanced {self.route_bypass_acl_id}")
+            for rid in sorted(undo_bypass):
+                commands.append(f"undo rule {rid}")
+            if want == "ON":
+                commands.extend(
+                    build_bypass_permit_commands(
+                        tv.ip, tv.route_rule, self.route_bypass_cidrs
+                    )
+                )
+            commands.extend(["quit", "quit"])
+            if save:
+                commands.append("save force")
+
             output = self._run(commands)
             self._ensure_ok(output)
             log.info(
@@ -245,6 +336,9 @@ class H3CSwitch:
                 result="ok",
                 state=want,
                 route_rule=tv.route_rule,
+                route_acl=self.route_acl_id,
+                bypass_acl=self.route_bypass_acl_id,
+                bypass=self.route_bypass_cidrs if want == "ON" else None,
                 duration_ms=int((time.perf_counter() - started) * 1000),
             )
             return want, undone_access_collision
@@ -267,7 +361,10 @@ class H3CSwitch:
             chunks: list[str] = []
             for command in commands:
                 tn.write(command.encode("ascii") + b"\r\n")
-                time.sleep(0.35 if not command.startswith("display") else 1.2)
+                delay = 1.2 if command.startswith("display") else 0.35
+                if "policy-based-route" in command or command.startswith("if-match"):
+                    delay = 0.6
+                time.sleep(delay)
                 chunks.append(tn.read_very_eager().decode("utf-8", errors="ignore"))
             return "\n".join(chunks)
         finally:

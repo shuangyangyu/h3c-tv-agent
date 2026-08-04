@@ -85,6 +85,9 @@ def parse_h3c_syslog_line(line: str) -> SyslogMatch | None:
 
     deny = _RE_DENY.search(line)
     if deny:
+        # PBR 私网例外：deny … destination …，不是通断 ACL 3000
+        if re.search(r"(?i)\bdestination\b", line[deny.start() : deny.start() + 160]):
+            return None
         rule = int(deny.group(1))
         ip = deny.group(2)
         by_rule = _access_deny_index().get(rule)

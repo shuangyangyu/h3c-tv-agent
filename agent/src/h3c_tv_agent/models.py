@@ -17,7 +17,7 @@ class DeviceConfig:
     key: str
     name: str
     ip: str
-    mac: str
+    mac: str = ""
     permit_rule: int = 0  # ACL 3000 permit（对照）
     deny_rule: int = 0  # ACL 3000 deny → 通断 OFF
     route_rule: int = 0  # ACL 3001 permit → 策略路由 ON

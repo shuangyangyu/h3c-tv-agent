@@ -30,8 +30,12 @@ class AgentService:
             port=settings.h3c_port,
             acl_id=settings.h3c_acl_id,
             route_acl_id=settings.route_acl_id,
+            route_bypass_acl_id=settings.route_bypass_acl_id,
+            pbr_name=settings.pbr_name,
+            pbr_deny_node=settings.pbr_deny_node,
             tvs=access_devices(),
             route_tvs=policy_route_devices(),
+            route_bypass_cidrs=settings.route_bypass_cidrs,
         )
         self.commands: queue.Queue[Command | None] = queue.Queue()
         self.switch_lock = threading.Lock()
@@ -111,6 +115,9 @@ class AgentService:
             syslog_udp_port=self.settings.syslog_udp_port,
             syslog_path=self.settings.h3c_syslog_path or None,
             route_acl=self.settings.route_acl_id,
+            bypass_acl=self.settings.route_bypass_acl_id,
+            pbr=f"{self.settings.pbr_name}/deny{self.settings.pbr_deny_node}",
+            route_bypass=self.settings.route_bypass_cidrs,
         )
 
     def stop(self) -> None:
@@ -224,8 +231,12 @@ def run_status_once(settings: Settings) -> int:
         port=settings.h3c_port,
         acl_id=settings.h3c_acl_id,
         route_acl_id=settings.route_acl_id,
+        route_bypass_acl_id=settings.route_bypass_acl_id,
+        pbr_name=settings.pbr_name,
+        pbr_deny_node=settings.pbr_deny_node,
         tvs=tvs,
         route_tvs=routes,
+        route_bypass_cidrs=settings.route_bypass_cidrs,
     )
     states = sw.get_statuses()
     for key, state in states.items():

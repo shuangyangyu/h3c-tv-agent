@@ -1,25 +1,19 @@
-# 设备身份：key（建议直接中文名）+ ip + mac；name 可省略（默认=key）
+# 设备身份：key（建议直接中文名）+ ip；mac / name 可省略
 # access / policy_route：引用上面的 key
 
 devices:
   - key: 主卧电视
     ip: 192.168.1.24
-    mac: cc98-8b23-abaa
   - key: 客厅电视
     ip: 192.168.1.25
-    mac: 88c9-e8d1-bcb0
   - key: 老人房电视
     ip: 192.168.1.26
-    mac: cc98-8b36-afc7
   - key: 书房电视
     ip: 192.168.1.27
-    mac: 7026-05e6-0afd
-  - key: 测试手机
+  - key: iphone_shuangyang
     ip: 192.168.1.36
-    mac: e49c-67d1-f4a4
-  - key: 旧工具机247
-    ip: 192.168.1.247
-    mac: 000c-2989-8078
+  - key: hass
+    ip: 192.168.1.249
 
 # 网络通断 → ACL 3000 + MQTT h3c/tv
 access:
@@ -30,5 +24,5 @@ access:
 
 # 策略路由 → ACL 3001 + MQTT h3c/route
 policy_route:
-  - 测试手机
-  - 旧工具机247
+  - iphone_shuangyang
+  - hass

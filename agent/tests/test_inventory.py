@@ -46,7 +46,7 @@ def test_access_and_route_sections():
 def test_name_optional_defaults_to_key():
     data = {
         "devices": [
-            {"key": "主卧电视", "ip": "192.168.1.24", "mac": "cc98-8b23-abaa"},
+            {"key": "主卧电视", "ip": "192.168.1.24"},
         ],
         "access": ["主卧电视"],
     }
@@ -54,6 +54,7 @@ def test_name_optional_defaults_to_key():
     assert policy.access_keys == ["主卧电视"]
     assert devices["主卧电视"].name == "主卧电视"
     assert devices["主卧电视"].ip == "192.168.1.24"
+    assert devices["主卧电视"].mac == ""
 
 
 def test_chinese_section_aliases():

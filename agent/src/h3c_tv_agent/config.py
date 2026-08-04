@@ -22,11 +22,16 @@ class Settings(BaseSettings):
     access_permit_rule_step: int = 10
     access_deny_rule_base: int = 15
     access_deny_rule_step: int = 10
-    # 策略路由 ACL 3001；规则号与通断 deny 错开（默认 100/110/…）
+    # 策略路由 ACL 3001（源 permit → mihomo）；规则号 100/110…
     route_acl_id: int = 3001
     route_rule_base: int = 100
     route_rule_step: int = 10
-    # 逗号分隔接口名（记录用；PBR 挂载不由本 Agent 改）
+    # 旁路 ACL 3002（源+私网目的 permit）+ PBR deny node → 普通路由
+    route_bypass_acl_id: int = 3002
+    route_bypass_cidrs: str = "192.168.0.0/16,10.0.0.0/8"
+    pbr_name: str = "mihomo"
+    pbr_deny_node: int = 5
+    # 逗号分隔接口名（记录用；permit node / 接口挂载需已存在）
     acl_apply_interfaces: str = "Vlan-interface1"
 
     mqtt_host: str = "192.168.1.249"

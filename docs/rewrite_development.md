@@ -3,7 +3,8 @@
 > 分支：`rewrite`  
 > 相对 v1（HA 自定义集成 `h3c_tv_control`）：把**交换机控制**抽成独立 Python 服务，**Docker 单容器**部署，经 **MQTT** 与 HA 通讯；Telnet 改 ACL；**进程内 UDP syslog** 做 Switch 状态反馈（便于将来 HA Addon）。
 
-运维速查：[agent/README.md](../agent/README.md)
+运维速查：[agent/README.md](../agent/README.md)  
+交换机 PBR/ACL 逻辑：[`switch_pbr.md`](./switch_pbr.md) → [`network/h3c-pbr-mihomo.md`](../../../network/h3c-pbr-mihomo.md)
 
 ---
 

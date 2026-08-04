@@ -103,15 +103,13 @@ def parse_devices_yaml(
             mac = normalize_mac(str(item.get("mac") or ""))
         except KeyError as exc:
             raise ValueError(f"devices[{i}] missing required field: {exc}") from exc
-        # name 可省略：默认等于 key（推荐 key 直接写中文名）
+        # name 可省略：默认等于 key；mac 可省略（仅作备注，Discovery 用 IP 生成 ASCII id）
         raw_name = item.get("name")
         name = str(raw_name).strip() if raw_name is not None else key
         if not key or not ip:
             raise ValueError(f"devices[{i}] key/ip must be non-empty")
         if not name:
             name = key
-        if not mac:
-            raise ValueError(f"devices[{i}] mac is required")
         if key in devices:
             raise ValueError(f"duplicate device key: {key}")
         devices[key] = DeviceConfig(

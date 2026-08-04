@@ -25,9 +25,16 @@ ControlKind = Literal["access", "route"]
 OnSetFn = Callable[[str, TVState, ControlKind], None]
 
 
-def _mac_slug(mac: str) -> str:
-    """ASCII id for HA discovery object_id / unique_id (中文 key 不能进 topic 段)."""
-    return "".join(c for c in mac.lower() if c.isalnum())
+def _entity_slug(*, mac: str, ip: str) -> str:
+    """ASCII id for HA discovery / unique_id（中文 key 不能进 topic 段）。
+
+    优先 mac；未填 mac 时用 IP（如 192.168.1.24 → 192168124）。
+    """
+    if mac:
+        s = "".join(c for c in mac.lower() if c.isalnum())
+        if s:
+            return s
+    return "".join(c for c in ip if c.isalnum())
 
 
 def _net_icon(state: TVState | None) -> str:
@@ -98,11 +105,11 @@ class MqttBridge:
     def route_set_topic(self, key: str) -> str:
         return f"{self.route_prefix}/{key}/set"
 
-    def discovery_topic(self, mac: str) -> str:
-        return f"homeassistant/switch/h3c_tv_{_mac_slug(mac)}/config"
+    def discovery_topic(self, slug: str) -> str:
+        return f"homeassistant/switch/h3c_tv_{slug}/config"
 
-    def route_discovery_topic(self, mac: str) -> str:
-        return f"homeassistant/switch/h3c_route_{_mac_slug(mac)}/config"
+    def route_discovery_topic(self, slug: str) -> str:
+        return f"homeassistant/switch/h3c_route_{slug}/config"
 
     def connect(self) -> None:
         self._client.connect(self._host, self._port, keepalive=60)
@@ -118,11 +125,11 @@ class MqttBridge:
 
     def _access_discovery_payload(self, key: str, state: TVState | None = None) -> dict[str, Any]:
         tv = access_devices()[key]
-        slug = _mac_slug(tv.mac)
+        slug = _entity_slug(mac=tv.mac, ip=tv.ip)
         return {
             "name": f"NET_{tv.name}",
             "unique_id": f"h3c_tv_agent_{slug}",
-            "object_id": f"h3c_tv_{slug}",
+            "default_entity_id": f"switch.h3c_tv_{slug}",
             "icon": _net_icon(state),
             "state_topic": self.state_topic(key),
             "command_topic": self.set_topic(key),
@@ -142,11 +149,11 @@ class MqttBridge:
 
     def _route_discovery_payload(self, key: str, state: TVState | None = None) -> dict[str, Any]:
         tv = policy_route_devices()[key]
-        slug = _mac_slug(tv.mac)
+        slug = _entity_slug(mac=tv.mac, ip=tv.ip)
         return {
             "name": f"PRB_{tv.name}",
             "unique_id": f"h3c_route_agent_{slug}",
-            "object_id": f"h3c_route_{slug}",
+            "default_entity_id": f"switch.h3c_route_{slug}",
             "icon": _prb_icon(state),
             "state_topic": self.route_state_topic(key),
             "command_topic": self.route_set_topic(key),
@@ -167,15 +174,17 @@ class MqttBridge:
     def publish_discovery(self) -> None:
         for key in access_devices():
             tv = access_devices()[key]
+            slug = _entity_slug(mac=tv.mac, ip=tv.ip)
             self._publish(
-                self.discovery_topic(tv.mac),
+                self.discovery_topic(slug),
                 json.dumps(self._access_discovery_payload(key), ensure_ascii=False),
                 retain=True,
             )
         for key in policy_route_devices():
             tv = policy_route_devices()[key]
+            slug = _entity_slug(mac=tv.mac, ip=tv.ip)
             self._publish(
-                self.route_discovery_topic(tv.mac),
+                self.route_discovery_topic(slug),
                 json.dumps(self._route_discovery_payload(key), ensure_ascii=False),
                 retain=True,
             )
@@ -197,8 +206,9 @@ class MqttBridge:
         # 随状态换图标（MQTT Switch 无原生 icon_on/off）
         cfg = access_devices().get(tv)
         if cfg is not None:
+            slug = _entity_slug(mac=cfg.mac, ip=cfg.ip)
             self._publish(
-                self.discovery_topic(cfg.mac),
+                self.discovery_topic(slug),
                 json.dumps(self._access_discovery_payload(tv, state), ensure_ascii=False),
                 retain=True,
             )
@@ -215,8 +225,9 @@ class MqttBridge:
             )
         cfg = policy_route_devices().get(key)
         if cfg is not None:
+            slug = _entity_slug(mac=cfg.mac, ip=cfg.ip)
             self._publish(
-                self.route_discovery_topic(cfg.mac),
+                self.route_discovery_topic(slug),
                 json.dumps(self._route_discovery_payload(key, state), ensure_ascii=False),
                 retain=True,
             )

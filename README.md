@@ -44,6 +44,7 @@
 | `packages/tv_internet/tv_internet.yaml` | 旧 YAML 方案（可被插件替代） |
 | `scripts/tv_internet/tv_internet_control.py` | 命令行调试脚本 |
 | `docs/rewrite_development.md` | Rewrite 开发文档 |
+| `docs/switch_pbr.md` | 交换机 PBR/ACL 索引 → `network/h3c-pbr-mihomo.md` |
 | `docs/h3c_integration_requirements.md` | 插件需求文档 |
 | `docs/h3c_integration_migration.md` | YAML 迁移指南 |
 | `docs/lovelace_card.md` | 单电视儿童管理自定义卡片说明 |
@@ -69,6 +70,7 @@
 
 - 运维 / 部署：[agent/README.md](agent/README.md)
 - 开发说明：[docs/rewrite_development.md](docs/rewrite_development.md)
+- 交换机 PBR（3001/3002、deny/permit node）：[docs/switch_pbr.md](docs/switch_pbr.md) · [network/h3c-pbr-mihomo.md](../../network/h3c-pbr-mihomo.md)
 
 ```bash
 cd hass/h3c-s5550

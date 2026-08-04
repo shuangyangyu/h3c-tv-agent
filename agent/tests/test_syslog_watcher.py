@@ -61,6 +61,15 @@ def test_parse_unrelated():
     assert parse_h3c_syslog_line("IFNET link up") is None
 
 
+def test_ignore_route_bypass_deny_with_destination():
+    line = (
+        "H3C %%10SHELL/6/SHELL_CMD: "
+        "Command is rule 98 deny ip source 192.168.1.249 0 "
+        "destination 192.168.0.0 0.0.255.255"
+    )
+    assert parse_h3c_syslog_line(line) is None
+
+
 def test_ignore_login_failed_with_command_as_username():
     line = (
         "<189>Aug  3 15:07:42 2026 H3C %%10LOGIN/5/LOGIN_FAILED: "
