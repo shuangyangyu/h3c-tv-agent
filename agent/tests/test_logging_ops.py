@@ -29,3 +29,12 @@ def test_syslog_feedback_watch_disabled():
     assert not watch.enabled
     watch.expect("客厅电视", "access", "ON")
     assert watch._pending == {}
+
+
+def test_syslog_feedback_expected_state():
+    watch = SyslogFeedbackWatch(timeout_sec=30)
+    assert watch.expected_state("主卧电视", "access") is None
+    watch.expect("主卧电视", "access", "OFF")
+    assert watch.expected_state("主卧电视", "access") == "OFF"
+    watch.matched("主卧电视", "access")
+    assert watch.expected_state("主卧电视", "access") is None

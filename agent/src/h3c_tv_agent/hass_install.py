@@ -19,7 +19,7 @@ from .logging_setup import get_logger
 
 log = get_logger("hass_install")
 
-CARD_URL = "/h3c_tv_child/lovelace/h3c-tv-child-card.js?v=0.1.1"
+CARD_URL = "/h3c_tv_child/lovelace/h3c-tv-child-card.js?v=0.1.3"
 CARD_RESOURCE_ID = "h3c_tv_child_card_resource"
 
 

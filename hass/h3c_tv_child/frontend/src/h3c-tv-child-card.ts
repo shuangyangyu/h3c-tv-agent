@@ -102,6 +102,8 @@ export class H3CTVChildCard extends LitElement {
   @state() private loadError = false;
   @state() private actionError = "";
   @state() private busy = new Set<string>();
+  /** entity_id → 乐观开关态（点按立刻翻，等 HA 状态追上） */
+  @state() private optimisticOn: Record<string, boolean> = {};
   @state() private resetArmed = false;
   private loadedDeviceId = "";
   private loadPromise?: Promise<void>;
@@ -149,6 +151,19 @@ export class H3CTVChildCard extends LitElement {
   protected updated(changed: PropertyValues): void {
     if (changed.has("hass") || changed.has("config")) {
       this.startEntityLoad();
+    }
+    if (changed.has("hass") && this.hass && Object.keys(this.optimisticOn).length) {
+      const next = { ...this.optimisticOn };
+      let dirty = false;
+      for (const [id, wantOn] of Object.entries(next)) {
+        const st = this.hass.states[id];
+        if (!st || UNAVAILABLE.has(st.state)) continue;
+        if ((st.state === "on") === wantOn) {
+          delete next[id];
+          dirty = true;
+        }
+      }
+      if (dirty) this.optimisticOn = next;
     }
   }
 
@@ -244,13 +259,41 @@ export class H3CTVChildCard extends LitElement {
 
   private toggle(suffix: "internet" | "child"): void {
     const entity = this.entity(suffix);
-    if (!this.usable(entity)) return;
+    if (!this.usable(entity) || !this.hass) return;
+    const turningOff = this.isOn(suffix);
+    if (suffix === "internet") {
+      this.optimisticOn = {
+        ...this.optimisticOn,
+        [entity!.entity_id]: !turningOff,
+      };
+      // 不占 busy、不等待：立刻跟手
+      void this.hass
+        .callService("switch", turningOff ? "turn_off" : "turn_on", {
+          entity_id: entity!.entity_id,
+        })
+        .catch((error: unknown) => {
+          const detail = error instanceof Error ? error.message : String(error);
+          this.actionError = `${this.words.serviceFailed}: ${detail}`;
+          const next = { ...this.optimisticOn };
+          delete next[entity!.entity_id];
+          this.optimisticOn = next;
+        });
+      return;
+    }
     void this.call(
       suffix,
       "switch",
-      entity!.state === "on" ? "turn_off" : "turn_on",
+      turningOff ? "turn_off" : "turn_on",
       { entity_id: entity!.entity_id },
     );
+  }
+
+  private isOn(suffix: "internet" | "child"): boolean {
+    const entity = this.entity(suffix);
+    if (!entity) return false;
+    const optimistic = this.optimisticOn[entity.entity_id];
+    if (optimistic !== undefined) return optimistic;
+    return entity.state === "on";
   }
 
   private toggleMediaPlayer(entityId: unknown): void {
@@ -307,13 +350,16 @@ export class H3CTVChildCard extends LitElement {
   private switchControl(suffix: "internet" | "child", label: string) {
     const entity = this.entity(suffix);
     const available = this.usable(entity);
-    const on = entity?.state === "on";
+    const on = this.isOn(suffix);
+    // 上网开关不因 busy 禁用（已乐观）；儿童控制仍防连点
+    const blocked =
+      !available || (suffix !== "internet" && this.busy.has(suffix));
     return html`
       <button
         class="switch-row"
         aria-label=${label}
         aria-pressed=${on}
-        ?disabled=${!available || this.busy.has(suffix)}
+        ?disabled=${blocked}
         @click=${() => this.toggle(suffix)}
       >
         <span>${label}</span>

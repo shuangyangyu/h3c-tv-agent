@@ -107,6 +107,17 @@ class AgentService:
         attrs: dict | None,
         kind: ControlKind = "access",
     ) -> None:
+        # 关网命令顺序是 undo(→ON) + deny(→OFF)；忽略中间的 undo，避免 HA 开关弹回
+        expected = self._syslog_watch.expected_state(key, kind)
+        if expected is not None and state != expected:
+            log.info(
+                "syslog interim state ignored",
+                tv=key,
+                control=kind,
+                state=state,
+                expected=expected,
+            )
+            return
         self._syslog_watch.matched(key, kind)
         self.mqtt.publish_status("online")
         if kind == "route":
@@ -115,7 +126,64 @@ class AgentService:
             self.mqtt.publish_state(key, state, attrs=attrs)
 
     def enqueue_set(self, key: str, want: TVState, kind: ControlKind = "access") -> None:
+        # 同一设备同类指令只保留最新，避免连点排队把状态打乱
+        self._coalesce_pending(key, kind)
+        # Telnet 可能还在排队：先回写 state，HA 开关立刻跟手
+        if kind == "route":
+            tv = policy_route_devices().get(key)
+            self.mqtt.publish_route_state(
+                key,
+                want,
+                attrs={
+                    "name": tv.name if tv else key,
+                    "ip": tv.ip if tv else "",
+                    "route_rule": tv.route_rule if tv else None,
+                    "control": "route",
+                    "feedback_source": "mqtt_queued",
+                    "action": "route_on" if want == "ON" else "route_off",
+                },
+            )
+        else:
+            self._syslog_watch.expect(key, "access", want)
+            tv = access_devices().get(key)
+            self.mqtt.publish_state(
+                key,
+                want,
+                attrs={
+                    "name": tv.name if tv else key,
+                    "ip": tv.ip if tv else "",
+                    "deny_rule": tv.deny_rule if tv else None,
+                    "control": "access",
+                    "feedback_source": "mqtt_queued",
+                    "action": "allow" if want == "ON" else "deny",
+                },
+            )
         self.commands.put(Command(tv=key, want=want, source="mqtt", kind=kind))
+
+    def _coalesce_pending(self, key: str, kind: ControlKind) -> None:
+        kept: list[Command | None] = []
+        dropped = 0
+        try:
+            while True:
+                item = self.commands.get_nowait()
+                if item is None:
+                    kept.append(None)
+                    continue
+                if item.tv == key and item.kind == kind and item.source == "mqtt":
+                    dropped += 1
+                    continue
+                kept.append(item)
+        except queue.Empty:
+            pass
+        for item in kept:
+            self.commands.put(item)
+        if dropped:
+            log.info(
+                "mqtt commands coalesced",
+                tv=key,
+                kind=kind,
+                dropped=dropped,
+            )
 
     def start(self) -> None:
         self.mqtt.connect()
@@ -231,9 +299,20 @@ class AgentService:
         with self.switch_lock:
             try:
                 if cmd.kind == "route":
-                    _state, collisions = self.switch.set_policy_route(cmd.tv, cmd.want)
-                    # Telnet 成功即回写（旧 rule 号 undo 时 syslog 对不上 route）；syslog 再覆盖
                     tv = policy_route_devices().get(cmd.tv)
+                    self.mqtt.publish_route_state(
+                        cmd.tv,
+                        cmd.want,
+                        attrs={
+                            "name": tv.name if tv else cmd.tv,
+                            "ip": tv.ip if tv else "",
+                            "route_rule": tv.route_rule if tv else None,
+                            "control": "route",
+                            "feedback_source": "mqtt_cmd",
+                            "action": "route_on" if cmd.want == "ON" else "route_off",
+                        },
+                    )
+                    _state, collisions = self.switch.set_policy_route(cmd.tv, cmd.want)
                     self.mqtt.publish_route_state(
                         cmd.tv,
                         cmd.want,
@@ -252,10 +331,37 @@ class AgentService:
                         except Exception:
                             pass
                 else:
-                    self.switch.set_internet(cmd.tv, cmd.want)
-                    # 通断依赖 SHELL syslog 回写 MQTT；超时则 warn
+                    # 先登记期望态并立刻回写 state（不用 HA optimistic/双闪电，也不用人为延迟）
                     self._syslog_watch.expect(cmd.tv, "access", cmd.want)
+                    tv = access_devices().get(cmd.tv)
+                    self.mqtt.publish_state(
+                        cmd.tv,
+                        cmd.want,
+                        attrs={
+                            "name": tv.name if tv else cmd.tv,
+                            "ip": tv.ip if tv else "",
+                            "deny_rule": tv.deny_rule if tv else None,
+                            "control": "access",
+                            "feedback_source": "mqtt_cmd",
+                            "action": "allow" if cmd.want == "ON" else "deny",
+                        },
+                    )
+                    self.switch.set_internet(cmd.tv, cmd.want)
+                    self.mqtt.publish_state(
+                        cmd.tv,
+                        cmd.want,
+                        attrs={
+                            "name": tv.name if tv else cmd.tv,
+                            "ip": tv.ip if tv else "",
+                            "deny_rule": tv.deny_rule if tv else None,
+                            "control": "access",
+                            "feedback_source": "telnet_ack",
+                            "action": "allow" if cmd.want == "ON" else "deny",
+                        },
+                    )
             except SwitchError as exc:
+                if cmd.kind == "access":
+                    self._syslog_watch.matched(cmd.tv, "access")
                 log.error(
                     "set failed",
                     tv=cmd.tv,

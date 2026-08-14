@@ -181,6 +181,12 @@ class SyslogFeedbackWatch:
                 state,
             )
 
+    def expected_state(self, key: str, kind: ControlKind) -> TVState | None:
+        """Return pending wanted state, if any."""
+        with self._lock:
+            item = self._pending.get((key, kind))
+            return item[1] if item else None
+
     def matched(self, key: str, kind: ControlKind) -> None:
         with self._lock:
             self._pending.pop((key, kind), None)

@@ -38,13 +38,12 @@ def _entity_slug(*, mac: str, ip: str) -> str:
 
 
 def _net_icon(state: TVState | None) -> str:
-    # ON=通；OFF=断（HA 还会对 inactive 实体做暗色）
-    return "mdi:lan-connect" if state != "OFF" else "mdi:lan-disconnect"
+    # 固定图标，避免每次状态变更重发 Discovery 导致开关闪一下
+    return "mdi:lan"
 
 
 def _prb_icon(state: TVState | None) -> str:
-    # ON=走策略/出境；OFF=本网直连（alt-route 在部分 HA/MDI 版本不显示）
-    return "mdi:earth" if state != "OFF" else "mdi:earth-off"
+    return "mdi:earth"
 
 
 class MqttBridge:
@@ -176,6 +175,8 @@ class MqttBridge:
             "payload_not_available": "offline",
             "qos": 1,
             "retain": False,
+            # optimistic=true 会变成「假定状态」双闪电；保持 false 才是拨动开关。
+            # 跟手靠 Telnet 成功后立即发 state（及 syslog 校正）。
             "optimistic": False,
             "device": self._device,
             "json_attributes_topic": self.attr_topic(key),
@@ -286,15 +287,6 @@ class MqttBridge:
         self._publish(self.state_topic(tv), state, retain=True)
         if attrs is not None:
             self._publish(self.attr_topic(tv), json.dumps(attrs, ensure_ascii=False), retain=True)
-        # 随状态换图标（MQTT Switch 无原生 icon_on/off）
-        cfg = access_devices().get(tv)
-        if cfg is not None:
-            slug = _entity_slug(mac=cfg.mac, ip=cfg.ip)
-            self._publish(
-                self.discovery_topic(slug),
-                json.dumps(self._access_discovery_payload(tv, state), ensure_ascii=False),
-                retain=True,
-            )
 
     def publish_route_state(
         self, key: str, state: TVState, *, attrs: dict[str, Any] | None = None
@@ -304,14 +296,6 @@ class MqttBridge:
             self._publish(
                 self.route_attr_topic(key),
                 json.dumps(attrs, ensure_ascii=False),
-                retain=True,
-            )
-        cfg = policy_route_devices().get(key)
-        if cfg is not None:
-            slug = _entity_slug(mac=cfg.mac, ip=cfg.ip)
-            self._publish(
-                self.route_discovery_topic(slug),
-                json.dumps(self._route_discovery_payload(key, state), ensure_ascii=False),
                 retain=True,
             )
 
