@@ -91,7 +91,17 @@ policy_route:             # 走策略 ACL 3001/3002 + MQTT h3c/route
 
 ## 部署
 
-在**仓库根目录**（compose context 已改为 `.`）：
+在**仓库根目录**构建；线上部署目录：
+
+```bash
+# 241
+cd /home/shuangyang/docker/smarthome/h3c-tv-agent
+cp config/.env.example config/.env   # 首次
+cp config/devices.yaml.example config/devices.yaml
+docker compose up -d --build
+```
+
+本地开发同样在仓库根：
 
 ```bash
 cp config/.env.example config/.env

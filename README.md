@@ -74,7 +74,8 @@ cp config/devices.yaml.example config/devices.yaml
 docker compose up -d --build
 ```
 
-配置只放在 **`config/`**（与 `docker-compose.yml` 同级）。
+配置只放在 **`config/`**（与 `docker-compose.yml` 同级）。  
+线上 241：`/home/shuangyang/docker/smarthome/h3c-tv-agent/`（见 [`smarthome/`](../../smarthome/)）。
 
 ## 儿童管理一键安装
 
