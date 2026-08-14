@@ -69,7 +69,8 @@ docker compose up -d --build
 | `DEVICES_CONFIG_PATH` | 设备 YAML |
 | `SYSLOG_UDP_PORT` / `FEEDBACK_MODE` | 反馈 |
 
-## 与 HA 插件仓库
+## 与旧 HA 插件仓库
 
-儿童策略 / Lovelace 卡片等仍在 [h3c_s5550_hass](https://github.com/shuangyangyu/h3c_s5550_hass)。  
-旧集成若与本 Agent 并行，约 60s 轮询，与 MQTT 开关可能不同步；稳定后可禁用旧集成的交换机轮询。
+旧 Telnet 集成已放弃并冻结：https://github.com/shuangyangyu/h3c_s5550_hass  
+**新地址**：https://github.com/shuangyangyu/h3c-tv-agent（儿童策略在本仓库 `hass/h3c_tv_child/`，MQTT 按钮一键安装）。  
+请勿再与旧集成并行写交换机。
