@@ -4,6 +4,34 @@ Docker：Telnet 改 H3C ACL（通断 + 策略路由）+ MQTT；syslog UDP 反馈
 
 仓库：https://github.com/shuangyangyu/h3c-tv-agent
 
+## 使用条件
+
+### 交换机
+
+- 允许 Agent **Telnet** 登录改 ACL  
+- **ACL 3000**（通断）规则与 `devices.yaml` 一致  
+- 若用策略路由：PBR **permit node + 接口**已存在；Agent 管 3001/3002  
+- Syslog：`info-center loghost <Agent可达IP>`，且  
+  `info-center source SHELL loghost level informational`  
+  （`warning` 会丢掉 `SHELL_CMD`，开关状态不回写）
+
+### MQTT
+
+- Home Assistant 侧 MQTT Broker 可用（含 Discovery）  
+- `.env` 中 `MQTT_HOST` / 账号密码正确，Agent ↔ Broker 互通  
+
+### 部署机
+
+- Docker Compose；仓库根目录构建  
+- 能访问交换机 Telnet；能收到交换机 syslog（或 fanout 转发）  
+
+### 儿童一键安装（可选）
+
+- `HA_SSH_HOST` / `USER` / `PASSWORD` 可 SSH 进 HA，且能跑 `ha`、`jq`  
+- 部署后手动添加一次集成并绑定实体  
+
+详见根 [README.md](../README.md#使用条件)。
+
 ## 两个配置文件
 
 | 文件 | 内容 |

@@ -7,6 +7,8 @@ Docker 单容器：Telnet 改 H3C ACL + MQTT + 进程内 syslog UDP；镜像打�
 运维：[agent/README.md](../agent/README.md) · 根 [README.md](../README.md) · 儿童 [hass/README.md](../hass/README.md)  
 交换机 PBR/ACL：[`lan/h3c-s5550/h3c-pbr-mihomo.md`](../../../lan/h3c-s5550/h3c-pbr-mihomo.md)
 
+**使用条件**（交换机 Telnet/ACL/syslog、MQTT Discovery、Docker、可选 HA SSH）见根 README「使用条件」一节。
+
 ---
 
 ## 1. 目标与原则
