@@ -4,13 +4,17 @@
 
 ## 前提
 
-- 已安装 `h3c_tv_child`，且 `h3c-tv-agent` MQTT 开关在线
-- 已在集成配置中绑定对应 `media_player`（否则时长类显示不可用）
+- 已用 Agent「安装/更新儿童管理」或手动部署 `h3c_tv_child`
+- `h3c-tv-agent` MQTT 开关在线
+- 集成配置中已绑定对应 `media_player`（否则时长统计不可用）
+- Lovelace 资源已存在（安装器会写入；也可手动添加）
 
 ## 资源
 
 - URL：`/h3c_tv_child/lovelace/h3c-tv-child-card.js?v=0.1.1`
 - 类型：JavaScript 模块
+
+若下拉无设备：确认资源指向 **h3c_tv_child**（不是已删除的 `h3c_tv_control`），并强制刷新浏览器。
 
 ## YAML 示例
 
