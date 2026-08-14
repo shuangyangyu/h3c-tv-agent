@@ -138,7 +138,7 @@ Main
 | 文件 | 用途 |
 |------|------|
 | `agent/.env` | H3C / MQTT / ACL / `HA_SSH_*` / `HASS_PACKAGE_PATH` |
-| `agent/devices.yaml` | `devices` + `access` / `policy_route` |
+| `agent/devices.yaml` | `devices` + `access` / `policy_route`（由 `devices.yaml.example` 复制后改） |
 
 `HA_SSH_PASSWORD` 为空则不发布安装按钮。完整变量见 `agent/.env.example`。
 

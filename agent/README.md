@@ -41,21 +41,39 @@ Docker：Telnet 改 H3C ACL（通断 + 策略路由）+ MQTT；syslog UDP 反馈
 
 ### `devices.yaml` 结构
 
+首次部署：
+
+```bash
+cp agent/devices.yaml.example agent/devices.yaml
+# 按现场改 IP / key，再挂进容器（compose 已默认挂载）
+```
+
+`devices.yaml.example` **只做模板**（进 git）；运行时读的是 **`devices.yaml`**（本机/现场文件，可含私有设备名）。
+
 ```yaml
 devices:
-  - key: 主卧电视
-    ip: 192.168.1.24
-  - key: 测试手机
-    ip: 192.168.1.36
+  - key: 主卧电视          # 必填；MQTT topic 段与日志里用的逻辑名
+    ip: 192.168.1.24      # 必填；ACL 源地址
+    # mac: cc98-8b23-abaa # 可选；有则 Discovery slug 用 mac，否则用 IP 去点
+    # name: 主卧电视       # 可选；默认等于 key（HA 里 NET_ 前缀显示名）
 
-access:           # 网络通断 → ACL 3000 + MQTT h3c/tv
+access:                   # 走通断 ACL 3000 + MQTT h3c/tv
   - 主卧电视
 
-policy_route:     # 策略路由 → ACL 3001/3002 + MQTT h3c/route
+policy_route:             # 走策略 ACL 3001/3002 + MQTT h3c/route
   - 测试手机
 ```
 
-未填 `mac` 时 Discovery `slug` 用 IP 去点（`.24` → 实体常为 `switch.h3c_tv_192168124`）。
+| 字段 | 说明 |
+|------|------|
+| `devices[].key` | 设备唯一名；`access` / `policy_route` 必须引用这里的 key |
+| `devices[].ip` | 主机 IP；deny/permit 规则按 `.env` 里 `ACCESS_*` / `ROUTE_*` 递加编号 |
+| `devices[].mac` | 可选；影响 HA 实体 id（`switch.h3c_tv_{slug}`） |
+| `access` | 要做「断网上网」的设备列表 |
+| `policy_route` | 要做「科学上网 PBR」的设备列表；可与 access 重叠或独立 |
+
+未填 `mac` 时：`192.168.1.24` → slug `192168124` → 实体常为 `switch.h3c_tv_192168124`。  
+规则号由 `.env` 的 `ACCESS_DENY_RULE_BASE/STEP`、`ROUTE_RULE_BASE/STEP` 按 **列表顺序** 分配，需与交换机上已有 ACL 一致。
 
 ## 数据流
 

@@ -9,7 +9,7 @@ Docker 服务：Telnet 改 H3C S5550 ACL（电视通断 + 策略路由）+ MQTT�
 
 | 路径 | 说明 |
 |------|------|
-| `agent/` | Python 服务、`.env.example`、`devices.yaml` |
+| `agent/` | Python 服务、`.env.example`、`devices.yaml.example`（模板） |
 | `hass/h3c_tv_child/` | HA 儿童策略集成 + Lovelace 卡片（随镜像打包） |
 | `docker-compose.yml` | 构建上下文为仓库根目录 |
 | `docs/development.md` | 开发说明 |
@@ -54,7 +54,7 @@ PBR/ACL 细节：[`lan/h3c-s5550/h3c-pbr-mihomo.md`](../../lan/h3c-s5550/h3c-pbr
 | Docker Compose | 在仓库根目录 `docker compose up -d --build` |
 | 到交换机 | 能 Telnet 交换机管理口 |
 | Syslog 端口 | 容器需收到交换机 SHELL 日志（现网常经 fanout → `1516:514/udp`） |
-| 配置 | 已填 `agent/.env`、`agent/devices.yaml` |
+| 配置 | 已从 example 生成并填好 `agent/.env`、`agent/devices.yaml` |
 
 ### 4. 儿童管理（可选）
 
