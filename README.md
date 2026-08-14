@@ -2,7 +2,8 @@
 
 Docker 服务：Telnet 改 H3C S5550 ACL（电视通断 + 策略路由）+ MQTT；内嵌 syslog UDP；**并带 HA 儿童管理插件包，可通过 MQTT 按钮一键安装/更新**。
 
-> 旧 Telnet 集成 `h3c_tv_control`：https://github.com/shuangyangyu/h3c_s5550_hass（已停用）
+> 旧 Telnet 集成 `h3c_tv_control` 已放弃并冻结：  
+> https://github.com/shuangyangyu/h3c_s5550_hass → **新地址** https://github.com/shuangyangyu/h3c-tv-agent
 
 ## 目录
 

@@ -1,7 +1,8 @@
 # h3c-tv-agent 开发文档
 
 > 独立仓库（由原 `h3c_s5550_hass` 的 rewrite 分出）：**Docker 单容器** Telnet 改 ACL + MQTT + 进程内 UDP syslog。  
-> HA 插件本体见 https://github.com/shuangyangyu/h3c_s5550_hass
+> **仓库迁址**：旧 https://github.com/shuangyangyu/h3c_s5550_hass（已 Archived）→ 新 https://github.com/shuangyangyu/h3c-tv-agent  
+> HA 儿童插件随本仓库 `hass/h3c_tv_child/`，MQTT 按钮一键安装。
 
 运维速查：[agent/README.md](../agent/README.md)  
 交换机 PBR/ACL：[`lan/h3c-s5550/h3c-pbr-mihomo.md`](../../../lan/h3c-s5550/h3c-pbr-mihomo.md)
@@ -225,7 +226,7 @@ services:
 | M2 | MQTT set → ACL | ✅ |
 | M3 | structlog | ✅ |
 | M4 | 队列 + 锁；syslog 反馈 | ✅ 现网验证 |
-| M5 | （儿童策略仍在 h3c_s5550_hass） | — |
+| M5 | 儿童策略 → `hass/h3c_tv_child/` + MQTT 安装按钮 | 完成 |
 | — | HA Addon 打包 | 待做（架构已按单容器对齐） |
 
 ---
