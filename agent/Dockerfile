@@ -11,7 +11,7 @@ COPY agent/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY agent/src ./src
-COPY agent/devices.yaml.example /app/devices.yaml
+COPY config/devices.yaml.example /app/devices.yaml
 # Bundled HA child integration (deployed by MQTT install button)
 COPY hass/h3c_tv_child /app/hass/h3c_tv_child
 

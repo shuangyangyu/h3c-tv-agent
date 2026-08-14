@@ -1,5 +1,6 @@
 .env
 agent/.env
+config/.env
 __pycache__/
 *.py[cod]
 .pytest_cache/

@@ -9,14 +9,14 @@ services:
       # 本机 514 留给 syslog-fanout（ER 固定打 514）；Agent 只收 fanout 转发
       - "127.0.0.1:1516:514/udp"
     env_file:
-      - ./agent/.env
+      - ./config/.env
     environment:
       FEEDBACK_MODE: h3c_syslog
       SYSLOG_UDP_PORT: "514"
       DEVICES_CONFIG_PATH: /app/devices.yaml
       HASS_PACKAGE_PATH: /app/hass/h3c_tv_child
     volumes:
-      - ./agent/devices.yaml:/app/devices.yaml:ro
+      - ./config/devices.yaml:/app/devices.yaml:ro
     logging:
       driver: json-file
       options:

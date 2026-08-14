@@ -32,23 +32,26 @@ Docker：Telnet 改 H3C ACL（通断 + 策略路由）+ MQTT；syslog UDP 反馈
 
 详见根 [README.md](../README.md#使用条件)。
 
-## 两个配置文件
+## 配置目录 `config/`（与 compose 并列）
+
+用户只改这里，见 [config/README.md](../config/README.md)。
 
 | 文件 | 内容 |
 |------|------|
-| **`.env`** | 连接/密钥、ACL 参数、slog、**HA_SSH_*** |
-| **`devices.yaml`** | 设备身份 + `access` / `policy_route` |
+| **`config/.env`** | 连接/密钥、ACL 参数、slog、**HA_SSH_*** |
+| **`config/devices.yaml`** | 设备身份 + `access` / `policy_route` |
 
 ### `devices.yaml` 结构
 
 首次部署：
 
 ```bash
-cp agent/devices.yaml.example agent/devices.yaml
-# 按现场改 IP / key，再挂进容器（compose 已默认挂载）
+cp config/.env.example config/.env
+cp config/devices.yaml.example config/devices.yaml
+# 按现场改 IP / key；compose 已挂载 config/
 ```
 
-`devices.yaml.example` **只做模板**（进 git）；运行时读的是 **`devices.yaml`**（本机/现场文件，可含私有设备名）。
+`*.example` **只做模板**（进 git）；运行时读 **`config/.env`** 与 **`config/devices.yaml`**。
 
 ```yaml
 devices:
@@ -91,9 +94,9 @@ policy_route:             # 走策略 ACL 3001/3002 + MQTT h3c/route
 在**仓库根目录**（compose context 已改为 `.`）：
 
 ```bash
-cp agent/.env.example agent/.env
-cp agent/devices.yaml.example agent/devices.yaml
-# 编辑 .env：H3C_* / MQTT_*；儿童安装再填 HA_SSH_*
+cp config/.env.example config/.env
+cp config/devices.yaml.example config/devices.yaml
+# 编辑 config/.env：H3C_* / MQTT_*；儿童安装再填 HA_SSH_*
 docker compose up -d --build
 ```
 
@@ -117,7 +120,7 @@ PBR permit node + 接口挂载需事先存在。
 
 ## 儿童管理
 
-1. `.env` 配置 `HA_SSH_*` 后重建/重启 Agent  
+1. `config/.env` 配置 `HA_SSH_*` 后重建/重启 Agent  
 2. HA 设备 **H3C Network Agent** →「安装/更新儿童管理」  
 3. 重启完成后添加集成 **H3C TV Child (MQTT)**，绑定 `switch.h3c_tv_*` 与 `media_player`  
 4. Lovelace 资源由安装器写入：`/h3c_tv_child/lovelace/h3c-tv-child-card.js?v=0.1.1`  

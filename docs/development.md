@@ -135,12 +135,14 @@ Main
 
 ## 7. 配置
 
+用户配置集中在仓库根目录旁的 **`config/`**（与 `docker-compose.yml` 并列）：
+
 | 文件 | 用途 |
 |------|------|
-| `agent/.env` | H3C / MQTT / ACL / `HA_SSH_*` / `HASS_PACKAGE_PATH` |
-| `agent/devices.yaml` | `devices` + `access` / `policy_route`（由 `devices.yaml.example` 复制后改） |
+| `config/.env` | H3C / MQTT / ACL / `HA_SSH_*` / `HASS_PACKAGE_PATH` |
+| `config/devices.yaml` | `devices` + `access` / `policy_route`（由 `devices.yaml.example` 复制后改） |
 
-`HA_SSH_PASSWORD` 为空则不发布安装按钮。完整变量见 `agent/.env.example`。
+`HA_SSH_PASSWORD` 为空则不发布安装按钮。完整变量见 `config/.env.example`。
 
 ---
 
@@ -148,6 +150,7 @@ Main
 
 ```text
 h3c-tv-agent/
+  config/                → .env + devices.yaml（用户只改这里）
   agent/
   hass/h3c_tv_child/     → 镜像 /app/hass/h3c_tv_child
   docker-compose.yml     context: .  dockerfile: agent/Dockerfile
