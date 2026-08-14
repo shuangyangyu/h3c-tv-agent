@@ -75,10 +75,12 @@ class MqttBridge:
             self._client.username_pw_set(username, password or None)
         self._client.will_set(self.status_topic, "offline", qos=1, retain=True)
         self._client.on_connect = self._on_connect
+        self._client.on_disconnect = self._on_disconnect
         self._client.on_message = self._on_message
         self._host = host
         self._port = port
         self._lock = threading.Lock()
+        self._was_connected = False
         self._device = {
             "identifiers": ["h3c_tv_agent"],
             "name": "H3C Network Agent",
@@ -134,7 +136,17 @@ class MqttBridge:
         return "homeassistant/sensor/h3c_child_install_status/config"
 
     def connect(self) -> None:
-        self._client.connect(self._host, self._port, keepalive=60)
+        try:
+            self._client.connect(self._host, self._port, keepalive=60)
+        except Exception as exc:
+            log.error(
+                "mqtt connect failed",
+                reason="unreachable",
+                host=self._host,
+                port=self._port,
+                error=str(exc),
+            )
+            raise
         self._client.loop_start()
 
     def stop(self) -> None:
@@ -340,7 +352,17 @@ class MqttBridge:
         except Exception:
             rc_int = 0 if str(reason_code) in {"Success", "0"} else 1
         if rc_int != 0:
-            log.error("mqtt connect failed", reason_code=str(reason_code))
+            # MQTT 3.1.1: 4 bad user/pass, 5 not authorized
+            reason = "auth" if rc_int in {4, 5} else "refused"
+            log.error(
+                "mqtt connect failed",
+                reason=reason,
+                reason_code=str(reason_code),
+                rc=rc_int,
+                host=self._host,
+                port=self._port,
+                detail="check MQTT_USER / MQTT_PASSWORD" if reason == "auth" else None,
+            )
             return
         client.subscribe(f"{self.prefix}/+/set", qos=1)
         client.subscribe(f"{self.route_prefix}/+/set", qos=1)
@@ -348,11 +370,25 @@ class MqttBridge:
             client.subscribe(self.install_child_set_topic, qos=1)
         self.publish_status("online")
         self.publish_discovery()
+        reconnected = self._was_connected
+        self._was_connected = True
         log.info(
             "mqtt connected",
             host=self._host,
+            port=self._port,
             prefix=self.prefix,
             route_prefix=self.route_prefix,
+            reconnected=reconnected,
+        )
+
+    def _on_disconnect(self, client, userdata, disconnect_flags, reason_code, properties=None) -> None:
+        rc_value = getattr(reason_code, "value", reason_code)
+        log.warning(
+            "mqtt disconnected",
+            reason_code=str(reason_code),
+            rc=str(rc_value),
+            host=self._host,
+            port=self._port,
         )
 
     def _on_message(self, client, userdata, msg) -> None:

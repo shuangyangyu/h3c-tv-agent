@@ -113,10 +113,37 @@ PBR permit node + 接口挂载需事先存在。
 | `MQTT_PREFIX` / `MQTT_ROUTE_PREFIX` | 默认 `h3c/tv` / `h3c/route` |
 | `DEVICES_CONFIG_PATH` | 设备 YAML |
 | `SYSLOG_UDP_PORT` / `FEEDBACK_MODE` | 反馈 |
+| `SYSLOG_FEEDBACK_TIMEOUT_SEC` | 通断后等 SHELL syslog；默认 20，`0` 关闭 |
 | `HA_SSH_HOST` / `USER` / `PASSWORD` | 非空则启用儿童安装按钮 |
 | `HA_CUSTOM_COMPONENTS` | 默认 `/config/custom_components` |
 | `HA_RESTART_AFTER_INSTALL` | 默认 `true` |
 | `HASS_PACKAGE_PATH` | 默认 `/app/hass/h3c_tv_child` |
+
+## 日志（进 Loki）
+
+一行 JSON（`service=h3c-tv-agent`，字段含 `ts` / `level` / `msg`）。241 Alloy 已采 Docker 日志。
+
+| 场景 | 关键日志字段 |
+|------|----------------|
+| 启动 | `agent started` |
+| MQTT 不通 / 密码错 | `mqtt connect failed` · `reason=unreachable\|auth\|refused` |
+| MQTT 断线 / 重连 | `mqtt disconnected` · `mqtt connected`（`reconnected=true`） |
+| 交换机不可达 | `switch unreachable` · `reason=unreachable` |
+| 账号密码错 | `switch login` · `result=fail` · `reason=auth`（**不写密码**） |
+| 通断 / PBR 失败 | `set failed` / `acl update failed` · `reason` |
+| Syslog 未回写 | `syslog feedback timeout`（通断 Telnet 成功但无 SHELL_CMD） |
+| 儿童安装失败 | `hass child install status` · `status=error` |
+
+Grafana Explore：
+
+```logql
+{job="docker", service="h3c-tv-agent"}
+{job="docker", service="h3c-tv-agent"} |= "mqtt connect failed" or "switch login" or "syslog feedback timeout"
+{job="docker", service="h3c-tv-agent"} | json | level="error"
+```
+
+看板（Grafana）：http://192.168.1.241:13000/d/h3c-tv-agent  
+对照交换机侧命令：`{service="h3c-s5560"} |= "SHELL_CMD"`（设备 syslog，不是 Agent 应用日志）。
 
 ## 儿童管理
 

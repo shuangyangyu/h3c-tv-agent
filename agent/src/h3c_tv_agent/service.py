@@ -15,7 +15,7 @@ from .log_feedback import clear_log_feedback, make_mqtt_feedback_publisher, regi
 from .logging_setup import get_logger, setup_logging
 from .models import ACCESS_KEYS, POLICY_ROUTE_KEYS, Command, TVState, access_devices, policy_route_devices
 from .mqtt_app import MqttBridge
-from .syslog_watcher import H3CSyslogTailer, H3CSyslogUdpServer
+from .syslog_watcher import H3CSyslogTailer, H3CSyslogUdpServer, SyslogFeedbackWatch
 from .telnet_switch import H3CSwitch, SwitchError
 
 log = get_logger("service")
@@ -69,6 +69,7 @@ class AgentService:
         )
         self._syslog_udp: H3CSyslogUdpServer | None = None
         self._syslog_tail: H3CSyslogTailer | None = None
+        self._syslog_watch = SyslogFeedbackWatch(0.0)
         clear_log_feedback()
         if settings.feedback_mode == "structured_log":
             register_log_feedback(
@@ -88,6 +89,9 @@ class AgentService:
                     settings.h3c_syslog_path,
                     on_state=self._on_syslog_state,
                 )
+            self._syslog_watch = SyslogFeedbackWatch(
+                settings.syslog_feedback_timeout_sec
+            )
 
         self._worker = threading.Thread(target=self._worker_loop, name="h3c-worker", daemon=True)
         self._poller: threading.Thread | None = None
@@ -103,6 +107,7 @@ class AgentService:
         attrs: dict | None,
         kind: ControlKind = "access",
     ) -> None:
+        self._syslog_watch.matched(key, kind)
         self.mqtt.publish_status("online")
         if kind == "route":
             self.mqtt.publish_route_state(key, state, attrs=attrs)
@@ -121,6 +126,7 @@ class AgentService:
             self._syslog_udp.start()
         if self._syslog_tail is not None:
             self._syslog_tail.start()
+        self._syslog_watch.start()
         self.commands.put(Command(tv="*", want="ON", source="bootstrap"))
         if self.installer is not None:
             threading.Thread(
@@ -137,6 +143,7 @@ class AgentService:
             feedback_mode=self.settings.feedback_mode,
             syslog_udp_port=self.settings.syslog_udp_port,
             syslog_path=self.settings.h3c_syslog_path or None,
+            syslog_feedback_timeout_sec=self.settings.syslog_feedback_timeout_sec,
             route_acl=self.settings.route_acl_id,
             bypass_acl=self.settings.route_bypass_acl_id,
             pbr=f"{self.settings.pbr_name}/deny{self.settings.pbr_deny_node}",
@@ -159,6 +166,7 @@ class AgentService:
 
     def stop(self) -> None:
         self._stop.set()
+        self._syslog_watch.stop()
         if self._syslog_udp is not None:
             self._syslog_udp.stop()
         if self._syslog_tail is not None:
@@ -207,7 +215,13 @@ class AgentService:
                 route_states = self.switch.get_route_statuses()
             except SwitchError as exc:
                 self.mqtt.publish_status("offline")
-                log.error("bootstrap status failed", action="poll", result="fail", error=str(exc))
+                log.error(
+                    "bootstrap status failed",
+                    action="poll",
+                    result="fail",
+                    reason=getattr(exc, "reason", None),
+                    error=str(exc),
+                )
                 return
         self.mqtt.publish_status("online")
         self.mqtt.publish_all_states(states)
@@ -239,6 +253,8 @@ class AgentService:
                             pass
                 else:
                     self.switch.set_internet(cmd.tv, cmd.want)
+                    # 通断依赖 SHELL syslog 回写 MQTT；超时则 warn
+                    self._syslog_watch.expect(cmd.tv, "access", cmd.want)
             except SwitchError as exc:
                 log.error(
                     "set failed",
@@ -246,6 +262,7 @@ class AgentService:
                     kind=cmd.kind,
                     action=cmd.want,
                     result="fail",
+                    reason=getattr(exc, "reason", None),
                     error=str(exc),
                 )
                 try:

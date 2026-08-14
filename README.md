@@ -95,4 +95,4 @@ Agent 启动后 MQTT Discovery 出现：
 
 说明：HA 的 MQTT 发现**不能**直接装自定义集成；按钮由 Agent 执行部署。首次部署后若尚未添加集成，到「设备与服务」添加 **H3C TV Child (MQTT)**。
 
-运维细节：[agent/README.md](agent/README.md)
+运维细节：[agent/README.md](agent/README.md)（含 **日志清单 / LogQL**）

@@ -147,6 +147,65 @@ def emit_syslog_match(line: str, on_state: PublishFn) -> bool:
     return True
 
 
+class SyslogFeedbackWatch:
+    """Warn when access ACL Telnet succeeded but no matching SHELL syslog arrives."""
+
+    def __init__(self, timeout_sec: float = 20.0) -> None:
+        self.timeout_sec = max(0.0, float(timeout_sec))
+        self._pending: dict[tuple[str, ControlKind], tuple[float, TVState]] = {}
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    @property
+    def enabled(self) -> bool:
+        return self.timeout_sec > 0
+
+    def start(self) -> None:
+        if not self.enabled or self._thread is not None:
+            return
+        self._thread = threading.Thread(
+            target=self._run, name="h3c-syslog-watch", daemon=True
+        )
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def expect(self, key: str, kind: ControlKind, state: TVState) -> None:
+        if not self.enabled:
+            return
+        with self._lock:
+            self._pending[(key, kind)] = (
+                time.monotonic() + self.timeout_sec,
+                state,
+            )
+
+    def matched(self, key: str, kind: ControlKind) -> None:
+        with self._lock:
+            self._pending.pop((key, kind), None)
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            now = time.monotonic()
+            expired: list[tuple[str, ControlKind, TVState]] = []
+            with self._lock:
+                for (key, kind), (deadline, state) in list(self._pending.items()):
+                    if now >= deadline:
+                        expired.append((key, kind, state))
+                        del self._pending[(key, kind)]
+            for key, kind, state in expired:
+                log.warning(
+                    "syslog feedback timeout",
+                    tv=key,
+                    control=kind,
+                    state=state,
+                    timeout_sec=self.timeout_sec,
+                    detail="Telnet ok but no SHELL_CMD; check fanout/info-center informational",
+                )
+            self._stop.wait(2.0)
+
+
 class H3CSyslogUdpServer:
     """Listen UDP syslog inside the agent (single-container / future HA addon)."""
 

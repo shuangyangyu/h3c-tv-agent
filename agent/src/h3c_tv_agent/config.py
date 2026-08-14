@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     feedback_mode: str = "h3c_syslog"
     syslog_udp_port: int = 514
     h3c_syslog_path: str = ""  # debug-only file tail
+    # 通断 Telnet 成功后等待 SHELL syslog 的秒数；0=关闭
+    syslog_feedback_timeout_sec: float = 20.0
 
     # 设备清单；空则试 /config/devices.yaml、./devices.yaml 等
     devices_config_path: str = ""

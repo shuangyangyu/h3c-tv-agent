@@ -71,7 +71,8 @@ class HassChildInstaller:
             version=version or self._local_version(),
             at=datetime.now(timezone.utc).isoformat(),
         )
-        log.info(
+        log_fn = log.error if status == "error" else log.info
+        log_fn(
             "hass child install status",
             status=status,
             message=message,

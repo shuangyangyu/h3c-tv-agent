@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from typing import Mapping
 
@@ -24,9 +25,34 @@ from .route_acl import (
 
 log = get_logger("telnet")
 
+_AUTH_FAIL_MARKERS = (
+    "login failed",
+    "authentication failed",
+    "login incorrect",
+    "wrong password",
+    "user name or password",
+    "username or password",
+    "bad password",
+)
+_STILL_AT_PROMPT = re.compile(r"(?i)(login|username|password)\s*:")
+
 
 class SwitchError(RuntimeError):
-    pass
+    """Telnet / ACL failure. Optional reason: auth | unreachable | prompt | reject."""
+
+    def __init__(self, message: str, *, reason: str | None = None) -> None:
+        super().__init__(message)
+        self.reason = reason
+
+
+def classify_login_banner(banner: str) -> str | None:
+    """Return 'auth' if banner looks like failed login; else None."""
+    low = banner.lower()
+    if any(m in low for m in _AUTH_FAIL_MARKERS):
+        return "auth"
+    if _STILL_AT_PROMPT.search(banner):
+        return "auth"
+    return None
 
 
 class H3CSwitch:
@@ -355,7 +381,22 @@ class H3CSwitch:
             raise
 
     def _run(self, commands: list[str]) -> str:
-        tn = telnetlib.Telnet(self.host, self.port, timeout=self.timeout)
+        try:
+            tn = telnetlib.Telnet(self.host, self.port, timeout=self.timeout)
+        except (OSError, TimeoutError, EOFError) as exc:
+            log.error(
+                "switch unreachable",
+                action="login",
+                result="fail",
+                reason="unreachable",
+                host=self.host,
+                port=self.port,
+                error=str(exc),
+            )
+            raise SwitchError(
+                f"switch unreachable {self.host}:{self.port}: {exc}",
+                reason="unreachable",
+            ) from exc
         try:
             self._login(tn)
             chunks: list[str] = []
@@ -375,17 +416,82 @@ class H3CSwitch:
             tn.close()
 
     def _login(self, tn: telnetlib.Telnet) -> None:
-        idx, _, text = tn.expect([b"[Ll]ogin:", b"[Uu]sername:"], timeout=8)
-        if idx < 0:
-            raise SwitchError(f"login prompt not found: {text!r}")
-        tn.write(self.username.encode("ascii") + b"\r\n")
-        idx, _, text = tn.expect([b"[Pp]assword:"], timeout=8)
-        if idx < 0:
-            raise SwitchError(f"password prompt not found: {text!r}")
-        tn.write(self.password.encode("ascii") + b"\r\n")
-        time.sleep(1.0)
-        banner = tn.read_very_eager().decode("utf-8", errors="ignore")
-        log.info("switch login", action="login", result="ok", banner_len=len(banner))
+        try:
+            idx, _, text = tn.expect([b"[Ll]ogin:", b"[Uu]sername:"], timeout=8)
+            if idx < 0:
+                snippet = text.decode("utf-8", errors="ignore")[:120] if text else ""
+                log.error(
+                    "switch login",
+                    action="login",
+                    result="fail",
+                    reason="prompt",
+                    host=self.host,
+                    user=self.username,
+                    detail="login prompt not found",
+                    snippet=snippet,
+                )
+                raise SwitchError(
+                    f"login prompt not found: {text!r}", reason="prompt"
+                )
+            tn.write(self.username.encode("ascii") + b"\r\n")
+            idx, _, text = tn.expect([b"[Pp]assword:"], timeout=8)
+            if idx < 0:
+                snippet = text.decode("utf-8", errors="ignore")[:120] if text else ""
+                log.error(
+                    "switch login",
+                    action="login",
+                    result="fail",
+                    reason="prompt",
+                    host=self.host,
+                    user=self.username,
+                    detail="password prompt not found",
+                    snippet=snippet,
+                )
+                raise SwitchError(
+                    f"password prompt not found: {text!r}", reason="prompt"
+                )
+            tn.write(self.password.encode("ascii") + b"\r\n")
+            time.sleep(1.0)
+            banner = tn.read_very_eager().decode("utf-8", errors="ignore")
+            auth_reason = classify_login_banner(banner)
+            if auth_reason:
+                log.error(
+                    "switch login",
+                    action="login",
+                    result="fail",
+                    reason=auth_reason,
+                    host=self.host,
+                    user=self.username,
+                    detail="check H3C_USER / H3C_PASSWORD",
+                    banner_len=len(banner),
+                )
+                raise SwitchError(
+                    "switch authentication failed (check H3C_USER/H3C_PASSWORD)",
+                    reason="auth",
+                )
+            log.info(
+                "switch login",
+                action="login",
+                result="ok",
+                host=self.host,
+                user=self.username,
+                banner_len=len(banner),
+            )
+        except SwitchError:
+            raise
+        except (OSError, TimeoutError, EOFError) as exc:
+            log.error(
+                "switch login",
+                action="login",
+                result="fail",
+                reason="unreachable",
+                host=self.host,
+                user=self.username,
+                error=str(exc),
+            )
+            raise SwitchError(
+                f"switch login I/O failed: {exc}", reason="unreachable"
+            ) from exc
 
     @staticmethod
     def _ensure_ok(output: str) -> None:
@@ -396,7 +502,7 @@ class H3CSwitch:
             "Invalid input",
         )
         if any(m in output for m in markers):
-            raise SwitchError(f"switch rejected command:\n{output}")
+            raise SwitchError(f"switch rejected command:\n{output}", reason="reject")
         for line in output.splitlines():
             if line.strip().startswith("%"):
-                raise SwitchError(f"switch error line: {line}")
+                raise SwitchError(f"switch error line: {line}", reason="reject")
