@@ -1,0 +1,76 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "H3C TV Child (MQTT)",
+        "description": "Bind each TV to the MQTT internet switch from h3c-tv-agent. Defaults match Discovery entity_ids.",
+        "data": {
+          "master_bedroom_internet_switch": "Master bedroom internet switch",
+          "living_room_internet_switch": "Living room internet switch",
+          "elder_room_internet_switch": "Elder room internet switch",
+          "study_room_internet_switch": "Study room internet switch"
+        }
+      }
+    },
+    "error": {
+      "duplicate_switches": "Each TV must use a different internet switch",
+      "missing_switches": "Select an internet switch for every TV",
+      "unknown": "An unknown error occurred"
+    },
+    "abort": {
+      "already_configured": "H3C TV Child is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "TV bindings",
+        "description": "Bind media players for usage timing, and optionally rebind MQTT internet switches.",
+        "data": {
+          "master_bedroom_media_player": "Master bedroom TV",
+          "living_room_media_player": "Living room TV",
+          "elder_room_media_player": "Elder room TV",
+          "study_room_media_player": "Study room TV",
+          "master_bedroom_internet_switch": "Master bedroom internet switch",
+          "living_room_internet_switch": "Living room internet switch",
+          "elder_room_internet_switch": "Elder room internet switch",
+          "study_room_internet_switch": "Study room internet switch"
+        }
+      }
+    },
+    "error": {
+      "duplicate_tv_entities": "Each TV must use a different media player entity",
+      "duplicate_switches": "Each TV must use a different internet switch"
+    }
+  },
+  "exceptions": {
+    "child_policy_denied": {
+      "message": "Child policy denied internet access: {reason}"
+    },
+    "communication_error": {
+      "message": "Failed to control MQTT internet switch: {error}"
+    }
+  },
+  "entity": {
+    "switch": {
+      "internet": {
+        "name": "Internet"
+      }
+    },
+    "sensor": {
+      "tv_on_today": {
+        "name": "TV on today"
+      }
+    },
+    "select": {
+      "allowed_window": {
+        "name": "Allowed window",
+        "state": {
+          "all_day": "All day",
+          "daytime": "Daytime (08:00–20:00)",
+          "nighttime": "Nighttime (20:00–08:00)"
+        }
+      }
+    }
+  }
+}

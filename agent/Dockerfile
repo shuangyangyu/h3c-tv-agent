@@ -4,12 +4,15 @@ WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app/src
+    PYTHONPATH=/app/src \
+    HASS_PACKAGE_PATH=/app/hass/h3c_tv_child
 
-COPY requirements.txt .
+COPY agent/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY src ./src
-COPY devices.yaml.example /app/devices.yaml
+COPY agent/src ./src
+COPY agent/devices.yaml.example /app/devices.yaml
+# Bundled HA child integration (deployed by MQTT install button)
+COPY hass/h3c_tv_child /app/hass/h3c_tv_child
 
 CMD ["python", "-m", "h3c_tv_agent", "run"]

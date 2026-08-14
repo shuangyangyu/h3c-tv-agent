@@ -55,5 +55,18 @@ class Settings(BaseSettings):
     # 兼容旧变量名
     tvs_config_path: str = ""
 
+    # HA 儿童插件一键安装（MQTT Discovery 按钮 → SSH 部署）
+    hass_package_path: str = "/app/hass/h3c_tv_child"
+    ha_ssh_host: str = ""
+    ha_ssh_port: int = 22
+    ha_ssh_user: str = "root"
+    ha_ssh_password: str = ""
+    ha_custom_components: str = "/config/custom_components"
+    ha_restart_after_install: bool = True
+
     def devices_path(self) -> str:
         return self.devices_config_path or self.tvs_config_path
+
+    @property
+    def child_install_enabled(self) -> bool:
+        return bool(self.ha_ssh_host and self.ha_ssh_user and self.ha_ssh_password)

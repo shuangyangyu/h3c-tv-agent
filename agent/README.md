@@ -39,7 +39,7 @@ policy_route:     # 策略路由 → ACL 3001 + MQTT h3c/route
   - ACL **3002**：`permit` 源+私网目的 → PBR **deny node** → 普通路由（局域网 / WG / IPsec）
 - 策略 OFF：清空该源在 3001/3002 上的相关 rule
 - Agent 会幂等创建 `policy-based-route mihomo deny node 5` + `if-match acl 3002`（permit node 需已存在）
-- 例外网段：`ROUTE_BYPASS_CIDRS`；见 [`docs/pbr-vpn-exceptions.md`](../docs/pbr-vpn-exceptions.md)
+- 例外网段：`ROUTE_BYPASS_CIDRS`；交换机逻辑见 syhome [`lan/h3c-s5550/h3c-pbr-mihomo.md`](../../../lan/h3c-s5550/h3c-pbr-mihomo.md)
 
 ## 部署
 
@@ -52,7 +52,7 @@ docker compose up -d --build
 交换机：`info-center loghost …` + `SHELL … informational`。  
 **PBR permit node + 接口挂载需事先存在**；Agent 维护 ACL 3001/3002，并幂等补齐 deny node。  
 
-交换机逻辑详解：[`docs/h3c-pbr-mihomo.md`](../docs/h3c-pbr-mihomo.md) · [`docs/switch_pbr.md`](../docs/switch_pbr.md)
+交换机逻辑详解：[`lan/h3c-s5550/h3c-pbr-mihomo.md`](../../../lan/h3c-s5550/h3c-pbr-mihomo.md)
 
 若现网 3001 仍用旧 rule 号，首次开/关会迁到 100/110，并校正可能的通断误报。
 

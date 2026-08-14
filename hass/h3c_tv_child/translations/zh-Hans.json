@@ -1,0 +1,76 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "H3C 电视儿童控制（MQTT）",
+        "description": "为每台电视绑定 h3c-tv-agent 的 MQTT 上网开关。默认实体 ID 与 Discovery 一致。",
+        "data": {
+          "master_bedroom_internet_switch": "主卧上网开关",
+          "living_room_internet_switch": "客厅上网开关",
+          "elder_room_internet_switch": "老人房上网开关",
+          "study_room_internet_switch": "书房上网开关"
+        }
+      }
+    },
+    "error": {
+      "duplicate_switches": "每台电视必须绑定不同的上网开关",
+      "missing_switches": "请为每台电视选择上网开关",
+      "unknown": "发生未知错误"
+    },
+    "abort": {
+      "already_configured": "H3C TV Child 已配置"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "电视实体绑定",
+        "description": "绑定 media_player 用于计时；可重新指定 MQTT 上网开关。",
+        "data": {
+          "master_bedroom_media_player": "主卧电视",
+          "living_room_media_player": "客厅电视",
+          "elder_room_media_player": "老人房电视",
+          "study_room_media_player": "书房电视",
+          "master_bedroom_internet_switch": "主卧上网开关",
+          "living_room_internet_switch": "客厅上网开关",
+          "elder_room_internet_switch": "老人房上网开关",
+          "study_room_internet_switch": "书房上网开关"
+        }
+      }
+    },
+    "error": {
+      "duplicate_tv_entities": "每台电视必须绑定不同的媒体播放器实体",
+      "duplicate_switches": "每台电视必须绑定不同的上网开关"
+    }
+  },
+  "exceptions": {
+    "child_policy_denied": {
+      "message": "儿童控制拒绝开启网络：{reason}"
+    },
+    "communication_error": {
+      "message": "控制 MQTT 上网开关失败：{error}"
+    }
+  },
+  "entity": {
+    "switch": {
+      "internet": {
+        "name": "上网开关"
+      }
+    },
+    "sensor": {
+      "tv_on_today": {
+        "name": "今日电视开启"
+      }
+    },
+    "select": {
+      "allowed_window": {
+        "name": "允许时段",
+        "state": {
+          "all_day": "全天",
+          "daytime": "白天（08:00–20:00）",
+          "nighttime": "晚上（20:00–08:00）"
+        }
+      }
+    }
+  }
+}

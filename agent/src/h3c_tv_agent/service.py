@@ -7,7 +7,10 @@ import threading
 import time
 from typing import Literal
 
+from pathlib import Path
+
 from .config import Settings
+from .hass_install import HassChildInstaller, InstallStatus
 from .log_feedback import clear_log_feedback, make_mqtt_feedback_publisher, register_log_feedback
 from .logging_setup import get_logger, setup_logging
 from .models import ACCESS_KEYS, POLICY_ROUTE_KEYS, Command, TVState, access_devices, policy_route_devices
@@ -40,6 +43,18 @@ class AgentService:
         self.commands: queue.Queue[Command | None] = queue.Queue()
         self.switch_lock = threading.Lock()
         self._stop = threading.Event()
+        self.installer: HassChildInstaller | None = None
+        if settings.child_install_enabled:
+            self.installer = HassChildInstaller(
+                package_dir=Path(settings.hass_package_path),
+                host=settings.ha_ssh_host,
+                port=settings.ha_ssh_port,
+                username=settings.ha_ssh_user,
+                password=settings.ha_ssh_password,
+                remote_components=settings.ha_custom_components,
+                restart_ha=settings.ha_restart_after_install,
+                on_status=self._on_install_status,
+            )
         self.mqtt = MqttBridge(
             host=settings.mqtt_host,
             port=settings.mqtt_port,
@@ -49,6 +64,8 @@ class AgentService:
             route_prefix=settings.mqtt_route_prefix,
             client_id=settings.mqtt_client_id,
             on_set=self.enqueue_set,
+            on_install_child=self._enqueue_install_child if self.installer else None,
+            enable_child_install=self.installer is not None,
         )
         self._syslog_udp: H3CSyslogUdpServer | None = None
         self._syslog_tail: H3CSyslogTailer | None = None
@@ -105,6 +122,12 @@ class AgentService:
         if self._syslog_tail is not None:
             self._syslog_tail.start()
         self.commands.put(Command(tv="*", want="ON", source="bootstrap"))
+        if self.installer is not None:
+            threading.Thread(
+                target=self._probe_install_status,
+                name="hass-child-probe",
+                daemon=True,
+            ).start()
         log.info(
             "agent started",
             h3c=self.settings.h3c_host,
@@ -118,7 +141,21 @@ class AgentService:
             bypass_acl=self.settings.route_bypass_acl_id,
             pbr=f"{self.settings.pbr_name}/deny{self.settings.pbr_deny_node}",
             route_bypass=self.settings.route_bypass_cidrs,
+            child_install=self.installer is not None,
         )
+
+    def _on_install_status(self, status: InstallStatus) -> None:
+        self.mqtt.publish_child_install_status(status.to_payload())
+
+    def _probe_install_status(self) -> None:
+        time.sleep(2)
+        if self.installer is not None:
+            self.installer.probe()
+
+    def _enqueue_install_child(self) -> None:
+        if self.installer is None:
+            return
+        self.installer.install_async()
 
     def stop(self) -> None:
         self._stop.set()

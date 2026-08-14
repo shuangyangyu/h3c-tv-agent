@@ -4,7 +4,7 @@
 > HA 插件本体见 https://github.com/shuangyangyu/h3c_s5550_hass
 
 运维速查：[agent/README.md](../agent/README.md)  
-交换机 PBR/ACL：[`switch_pbr.md`](./switch_pbr.md) · [`h3c-pbr-mihomo.md`](./h3c-pbr-mihomo.md)
+交换机 PBR/ACL：[`lan/h3c-s5550/h3c-pbr-mihomo.md`](../../../lan/h3c-s5550/h3c-pbr-mihomo.md)
 
 ---
 
@@ -18,7 +18,8 @@
 | 反馈 | 交换机 **SHELL_CMD syslog** → Agent 解析 → MQTT `state` |
 | 语言 | **Python 3.11+**（镜像 3.12） |
 
-**不做（本期）**：HA 进程内 Telnet；独立 syslog-ng / Loki 栈；儿童策略（M5）。
+**不做（Agent 控制面）**：HA 进程内 Telnet；独立 syslog-ng / Loki 栈。  
+**儿童策略**：源码随本仓库 [`hass/h3c_tv_child/`](../hass/h3c_tv_child/)；运行时由 MQTT 按钮 `button.h3c_install_child` 经 SSH 部署到 HA（见根 README）。
 
 ---
 
@@ -224,7 +225,7 @@ services:
 | M2 | MQTT set → ACL | ✅ |
 | M3 | structlog | ✅ |
 | M4 | 队列 + 锁；syslog 反馈 | ✅ 现网验证 |
-| M5 | 儿童策略；下线旧集成 | 待做 |
+| M5 | （儿童策略仍在 h3c_s5550_hass） | — |
 | — | HA Addon 打包 | 待做（架构已按单容器对齐） |
 
 ---

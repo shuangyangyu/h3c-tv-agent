@@ -59,10 +59,14 @@ class MqttBridge:
         route_prefix: str,
         client_id: str,
         on_set: OnSetFn,
+        on_install_child: Callable[[], None] | None = None,
+        enable_child_install: bool = False,
     ) -> None:
         self.prefix = prefix.rstrip("/")
         self.route_prefix = route_prefix.rstrip("/")
         self.on_set = on_set
+        self.on_install_child = on_install_child
+        self.enable_child_install = enable_child_install
         self._client = mqtt.Client(
             mqtt.CallbackAPIVersion.VERSION2,
             client_id=client_id,
@@ -80,7 +84,7 @@ class MqttBridge:
             "name": "H3C Network Agent",
             "manufacturer": "syhome",
             "model": "S5550 ACL",
-            "sw_version": "0.3.1",
+            "sw_version": "0.4.0",
         }
 
     @property
@@ -110,6 +114,24 @@ class MqttBridge:
 
     def route_discovery_topic(self, slug: str) -> str:
         return f"homeassistant/switch/h3c_route_{slug}/config"
+
+    @property
+    def install_child_set_topic(self) -> str:
+        return f"{self.prefix}/install_child/set"
+
+    @property
+    def install_child_state_topic(self) -> str:
+        return f"{self.prefix}/install_child/state"
+
+    @property
+    def install_child_attr_topic(self) -> str:
+        return f"{self.prefix}/install_child/attr"
+
+    def install_child_button_discovery_topic(self) -> str:
+        return "homeassistant/button/h3c_install_child/config"
+
+    def install_child_sensor_discovery_topic(self) -> str:
+        return "homeassistant/sensor/h3c_child_install_status/config"
 
     def connect(self) -> None:
         self._client.connect(self._host, self._port, keepalive=60)
@@ -188,11 +210,60 @@ class MqttBridge:
                 json.dumps(self._route_discovery_payload(key), ensure_ascii=False),
                 retain=True,
             )
+        if self.enable_child_install:
+            self._publish_child_install_discovery()
         log.info(
             "mqtt discovery published",
             access=list(ACCESS_KEYS),
             policy_route=list(POLICY_ROUTE_KEYS),
+            child_install=self.enable_child_install,
         )
+
+    def _publish_child_install_discovery(self) -> None:
+        button = {
+            "name": "安装/更新儿童管理",
+            "unique_id": "h3c_tv_agent_install_child",
+            "default_entity_id": "button.h3c_install_child",
+            "icon": "mdi:baby-carriage",
+            "command_topic": self.install_child_set_topic,
+            "payload_press": "PRESS",
+            "availability_topic": self.status_topic,
+            "payload_available": "online",
+            "payload_not_available": "offline",
+            "qos": 1,
+            "device": self._device,
+            "entity_category": "config",
+        }
+        sensor = {
+            "name": "儿童管理安装状态",
+            "unique_id": "h3c_tv_agent_child_install_status",
+            "default_entity_id": "sensor.h3c_child_install_status",
+            "icon": "mdi:package-variant-closed",
+            "state_topic": self.install_child_state_topic,
+            "json_attributes_topic": self.install_child_attr_topic,
+            "value_template": "{{ value_json.status }}",
+            "availability_topic": self.status_topic,
+            "payload_available": "online",
+            "payload_not_available": "offline",
+            "qos": 1,
+            "device": self._device,
+            "entity_category": "diagnostic",
+        }
+        self._publish(
+            self.install_child_button_discovery_topic(),
+            json.dumps(button, ensure_ascii=False),
+            retain=True,
+        )
+        self._publish(
+            self.install_child_sensor_discovery_topic(),
+            json.dumps(sensor, ensure_ascii=False),
+            retain=True,
+        )
+
+    def publish_child_install_status(self, payload: str) -> None:
+        """Publish install status JSON to state + attributes topics."""
+        self._publish(self.install_child_state_topic, payload, retain=True)
+        self._publish(self.install_child_attr_topic, payload, retain=True)
 
     def publish_status(self, status: str) -> None:
         self._publish(self.status_topic, status, retain=True)
@@ -273,6 +344,8 @@ class MqttBridge:
             return
         client.subscribe(f"{self.prefix}/+/set", qos=1)
         client.subscribe(f"{self.route_prefix}/+/set", qos=1)
+        if self.enable_child_install:
+            client.subscribe(self.install_child_set_topic, qos=1)
         self.publish_status("online")
         self.publish_discovery()
         log.info(
@@ -284,6 +357,16 @@ class MqttBridge:
 
     def _on_message(self, client, userdata, msg) -> None:
         topic = msg.topic
+        if self.enable_child_install and topic == self.install_child_set_topic:
+            raw = msg.payload.decode("utf-8", errors="replace").strip().upper()
+            if raw in {"PRESS", "INSTALL", "UPDATE", "ON", "1"}:
+                log.info("mqtt command", action="install_child", result="queued")
+                if self.on_install_child:
+                    self.on_install_child()
+            else:
+                log.warning("mqtt install_child ignored", payload=repr(msg.payload))
+            return
+
         parts = topic.split("/")
         if len(parts) < 3 or parts[-1] != "set":
             return
