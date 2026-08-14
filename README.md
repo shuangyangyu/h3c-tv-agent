@@ -12,7 +12,7 @@ Docker 服务：Telnet 改 H3C S5550 ACL（电视通断 + 策略路由）+ MQTT�
 | `agent/` | Python 服务、`.env.example`、`devices.yaml` |
 | `hass/h3c_tv_child/` | HA 儿童策略集成 + Lovelace 卡片（随镜像打包） |
 | `docker-compose.yml` | 构建上下文为仓库根目录 |
-| `docs/rewrite_development.md` | 开发说明 |
+| `docs/development.md` | 开发说明 |
 | [`../../lan/h3c-s5550/h3c-pbr-mihomo.md`](../../lan/h3c-s5550/h3c-pbr-mihomo.md) | PBR / ACL |
 
 ## 文档入口
@@ -20,7 +20,7 @@ Docker 服务：Telnet 改 H3C S5550 ACL（电视通断 + 策略路由）+ MQTT�
 | 文档 | 内容 |
 |------|------|
 | [agent/README.md](agent/README.md) | 运维：配置、部署、环境变量、儿童安装 |
-| [docs/rewrite_development.md](docs/rewrite_development.md) | 架构 / MQTT / syslog / 里程碑 |
+| [docs/development.md](docs/development.md) | 架构 / MQTT / syslog / 里程碑 |
 | [hass/README.md](hass/README.md) | 儿童集成与卡片 |
 
 ## 快速开始
