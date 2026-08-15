@@ -1,8 +1,8 @@
-# h3c-tv-agent 开发说明
+# h3c-switch-agent 开发说明
 
-Docker 单容器：Telnet 改 H3C ACL + MQTT + 进程内 syslog UDP；镜像打包 HA 儿童插件，可由 MQTT 按钮经 SSH 部署。
+Docker 单容器：Telnet 改 H3C **交换机** ACL / PBR + MQTT + 进程内 syslog UDP；镜像打包 HA 儿童插件，可由 MQTT 按钮经 SSH 部署。当前功能是通断与策略路由，仓库按交换机 Agent 扩展，不限定电视。
 
-仓库：https://github.com/shuangyangyu/h3c-tv-agent  
+仓库：https://github.com/shuangyangyu/h3c-switch-agent  
 
 运维：[agent/README.md](../agent/README.md) · 根 [README.md](../README.md) · 儿童 [hass/README.md](../hass/README.md)  
 交换机 PBR/ACL：[`lan/h3c-s5550/h3c-pbr-mihomo.md`](../../../lan/h3c-s5550/h3c-pbr-mihomo.md)

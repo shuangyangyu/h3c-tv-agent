@@ -1,9 +1,12 @@
-# h3c-tv-agent
+# h3c-switch-agent
 
-Docker 服务：Telnet 改 H3C S5550 ACL（电视通断 + 策略路由）+ MQTT；内嵌 syslog UDP；**并带 HA 儿童管理插件包，可通过 MQTT 按钮一键安装/更新**。
+H3C **交换机** Agent（现网 S5550）：Telnet 改 ACL / PBR + MQTT + 内嵌 syslog UDP。  
+当前实现电视通断与策略路由；后续其它交换机能力也放在本仓库。HA 儿童管理插件随镜像打包，可通过 MQTT 按钮一键安装/更新。
 
-> 旧 Telnet 集成 `h3c_tv_control` 已放弃并冻结：  
-> https://github.com/shuangyangyu/h3c_s5550_hass → **新地址** https://github.com/shuangyangyu/h3c-tv-agent
+> 旧 HA Telnet 集成 `h3c_tv_control` 已放弃并冻结：  
+> https://github.com/shuangyangyu/h3c_s5550_hass → **新地址** https://github.com/shuangyangyu/h3c-switch-agent
+
+> 现网容器 / Loki 标签仍为 `h3c-tv-agent`（未改，以免断看板）。线上目录：`241:/home/shuangyang/docker/smarthome/h3c-tv-agent/`。
 
 ## 目录
 

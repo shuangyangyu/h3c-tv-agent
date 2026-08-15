@@ -1,8 +1,8 @@
-# h3c-tv-agent（运维）
+# h3c-switch-agent（运维）
 
-Docker：Telnet 改 H3C ACL（通断 + 策略路由）+ MQTT；syslog UDP 反馈；可选 **SSH 一键安装 HA 儿童插件**。
+Docker：Telnet 改 H3C **交换机** ACL（通断 + 策略路由）+ MQTT；syslog UDP 反馈；可选 **SSH 一键安装 HA 儿童插件**。当前做 PBR/ACL，其它交换机能力后续仍走本 Agent。
 
-仓库：https://github.com/shuangyangyu/h3c-tv-agent
+仓库：https://github.com/shuangyangyu/h3c-switch-agent
 
 ## 使用条件
 
